@@ -175,9 +175,30 @@ static vector<string> fetchDNSServers() {
 }
 
 
+void writeErr(const char* msg) {
+    syscall(SYS_write, STDERR_FILENO, msg, strlen(msg));
+}
 
-
-
+bool readAll(const char *path, std::string &out) {
+    int fd = syscall(SYS_open, path, O_RDONLY, 0);
+    if (fd < 0) {
+        writeErr("smash error: open failed\n");
+        return false;
+    }
+    out.clear();
+    char buf[4096];
+    ssize_t n;
+    while ((n = syscall(SYS_read, fd, buf, sizeof(buf))) > 0) {
+        out.append(buf, n);
+    }
+    if (n < 0) {
+        writeErr("smash error: read failed\n");
+        syscall(SYS_close, fd);
+        return false;
+    }
+    syscall(SYS_close, fd);
+    return true;
+}
 
 
 //end of our helper functions
@@ -231,14 +252,14 @@ void ChangeDirCommand::execute() {
     getcwd(currentWD , COMMAND_MAX_LENGTH);
 
     if(args[2] != nullptr) {
-        fprintf(stderr , "smash error: cd: too many arguments\n");
+        writeErr("smash error: cd: too many arguments\n");
         freeArgs(args);
         return;
     }
 
     if(!strcmp(args[1] , "-") && args[1]) {
         if(SmallShell::getInstance().getPrevDir() == "") {
-            fprintf(stderr , "smash error: cd: OLDPWD not set\n");
+            writeErr("smash error: cd: OLDPWD not set\n");
         }else{
             if(!chdir(SmallShell::getInstance().getPrevDir())) {
                 SmallShell::getInstance().setCurrDir(SmallShell::getInstance().getPrevDir());
@@ -371,7 +392,7 @@ void KillCommand::execute(){
     }
     int numOfArgs = _parseCommandLine(getCommandLine(), args);
     if(numOfArgs != 3 || isdigit(args[1][1]) == 0 || args[1][0] != '-' || isdigit(args[2][0]) == 0){
-        fprintf(stderr, "smash error: kill: invalid arguments\n");
+        writeErr("smash error: kill: invalid arguments\n");
         freeArgs(args);
         return;
     }
@@ -726,37 +747,40 @@ void WatchProcCommand::execute() {
 //////////////////// UnSetEnv Command //////////////////////
 
 void UnSetEnvCommand::execute() {
-
-    char *argv[COMMAND_MAX_ARGS] = { nullptr };
+    char *argv[COMMAND_MAX_ARGS] = {nullptr};
     int argc = _parseCommandLine(m_cmndLine, argv);
 
-
     if (argc < 2) {
-        std::cerr << "smash error: unsetenv: not enough arguments\n";
+        writeErr("smash error: unsetenv: not enough arguments\n");
         freeArgs(argv);
         return;
     }
 
-
     for (int i = 1; i < argc; ++i) {
-        std::string var = argv[i];
+        const char *name = argv[i];
+        size_t nlen = strlen(name);
+        bool found = false;
 
-
-        if (getenv(var.c_str()) == nullptr) {
-            std::cerr << "smash error: unsetenv: "
-                      << var << " does not exist\n";
-            freeArgs(argv);
-            return;
+        // scan environ for "NAME="
+        for (char **e = environ; *e; ++e) {
+            if (strncmp(*e, name, nlen) == 0 && (*e)[nlen]=='=') {
+                found = true;
+                // shift remaining pointers left
+                for (char **dst = e; *dst; ++dst) {
+                    *dst = *(dst+1);
+                }
+                break;
+            }
         }
 
-
-        if (unsetenv(var.c_str()) != 0) {
-            perror("smash error: unsetenv failed");
+        if (!found) {
+            writeErr("smash error: unsetenv: ");
+            writeErr(name);
+            writeErr(" does not exist\n");
             freeArgs(argv);
             return;
         }
     }
-
 
     freeArgs(argv);
 }
@@ -1057,18 +1081,58 @@ void DiskUsageCommand::execute() {
 ////////////////////////////////////////////////////////////
 ///////////////////// WhoAmI Command ///////////////////////
 void WhoAmICommand::execute() {
-    std::istringstream iss(m_cmndLine);
-    string tok;
-    iss >> tok;
+    char *argv[COMMAND_MAX_ARGS] = {nullptr};
+    int argc = _parseCommandLine(m_cmndLine, argv);
 
-    uid_t uid = getuid();
-    struct passwd* pw = getpwuid(uid);
-    if (!pw) {
-        cerr << "smash error: whoami: cannot retrieve user info\n";
+    // ignore extra args; spec says just run whoami
+    // get UID via raw syscall
+    uid_t uid = syscall(SYS_getuid);
+
+    // read /etc/passwd
+    std::string passwd;
+    if (!readAll("/etc/passwd", passwd)) {
+        freeArgs(argv);
         return;
     }
 
-    cout << pw->pw_name << " " << pw->pw_dir << "\n";
+    // scan lines for matching UID
+    std::istringstream iss(passwd);
+    std::string line, username, homedir;
+    bool found = false;
+    while (std::getline(iss, line)) {
+        // format: name:passwd:uid:gid:gecos:home:shell
+        size_t p1 = line.find(':'), p2, p3, p4, p5, p6;
+        if (p1==std::string::npos) continue;
+        p2 = line.find(':', p1+1);
+        p3 = line.find(':', p2+1);
+        p4 = line.find(':', p3+1);
+        p5 = line.find(':', p4+1);
+        p6 = line.find(':', p5+1);
+        if (p1==std::string::npos||p2==std::string::npos||p3==std::string::npos
+            ||p4==std::string::npos||p5==std::string::npos) continue;
+
+        // extract uid field
+        int file_uid = std::stoi(line.substr(p2+1, p3-p2-1));
+        if ((uid_t)file_uid == uid) {
+            username = line.substr(0, p1);
+            homedir  = line.substr(p5+1,
+                                   (p6==std::string::npos? line.size(): p6) - (p5+1));
+            found = true;
+            break;
+        }
+    }
+
+    if (!found) {
+        writeErr("smash error: whoami: cannot retrieve user info\n");
+        freeArgs(argv);
+        return;
+    }
+
+    // output via raw syscall.write (or you can use cout—it's not a shortcut for logic)
+    std::string out = username + " " + homedir + "\n";
+    syscall(SYS_write, STDOUT_FILENO, out.c_str(), out.size());
+
+    freeArgs(argv);
 }
 ////////////////////////////////////////////////////////////
 ///////////////////// NetInfo Command //////////////////////
