@@ -1,3 +1,0 @@
-C:/Users/karim/OneDrive/Desktop/semester 6/Operating Systems/OS HW/skeleton_smash/cmake-build-debug/CMakeFiles/skeleton_smash.dir
-C:/Users/karim/OneDrive/Desktop/semester 6/Operating Systems/OS HW/skeleton_smash/cmake-build-debug/CMakeFiles/edit_cache.dir
-C:/Users/karim/OneDrive/Desktop/semester 6/Operating Systems/OS HW/skeleton_smash/cmake-build-debug/CMakeFiles/rebuild_cache.dir

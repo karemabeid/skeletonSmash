@@ -3,7 +3,7 @@
 #define SMASH_COMMAND_H_
 
 #include <cstdlib>    // for free()
-#include <stdlib.h>
+#include <signal.h>
 #include <regex>
 #include <vector>
 #include <utility>
@@ -18,6 +18,19 @@
 #include <iostream>
 #include <string>
 #include <sstream>
+#include <iomanip>
+#include <cerrno>
+#include <limits.h>
+#include <typeinfo>
+#include <fcntl.h>
+#include <cstring>
+#include <sys/syscall.h>
+#include <sys/ioctl.h>
+#include <sys/socket.h>
+#include <net/if.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
 
 
 
@@ -125,8 +138,9 @@ public:
 
 class NetInfo : public Command {
     // TODO: Add your data members **BONUS: 10 Points**
+    
 public:
-    NetInfo(const char *cmd_line) : Command(cmd_line){}
+    NetInfo(const char *cmd_line);
 
     virtual ~NetInfo() {
     }
@@ -422,9 +436,11 @@ private:
     int m_curr_pid;
 
     SmallShell(): m_jobs(new JobsList()) , m_aliasSystem(new Alias_system())
-            , m_curr_cmndLine(""), m_prompt(""),m_curr_jid(-1),m_curr_pid(-1){
+            , m_curr_cmndLine(""),m_dir_arr(new char*[2]), m_prompt("smash"){
         m_dir_arr[0] = nullptr;
         m_dir_arr[1] = nullptr;
+        m_curr_jid = -1;
+        m_curr_pid = -1;
     }
 
 public:

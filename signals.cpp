@@ -2,7 +2,7 @@
 #include <signal.h>
 #include "signals.h"
 #include "Commands.h"
-#include <sys/kill.h>
+
 
 using namespace std;
 

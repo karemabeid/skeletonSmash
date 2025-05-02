@@ -4,9 +4,10 @@
 #include <vector>
 #include <sstream>
 #include <sys/wait.h>
-#include <sys/kill.h>
+
 #include <iomanip>
 #include "Commands.h"
+
 
 
 
@@ -258,7 +259,7 @@ void ChangeDirCommand::execute() {
     }
 
     if(!strcmp(args[1] , "-") && args[1]) {
-        if(SmallShell::getInstance().getPrevDir() == "") {
+        if(SmallShell::getInstance().getPrevDir() == nullptr) {
             writeErr("smash error: cd: OLDPWD not set\n");
         }else{
             if(!chdir(SmallShell::getInstance().getPrevDir())) {
@@ -299,15 +300,20 @@ void ForegroundCommand::execute() {
     int numOfArgs = _parseCommandLine(getCommandLine(), args);
     SmallShell& shell = SmallShell::getInstance();
     if(numOfArgs == 1) {
+		
         if (shell.getJobs()->getJobsList().empty()) {
             std::cerr << "smash error: fg: jobs list is empty" << std::endl;
             freeArgs(args);
             return;
         }
-        int *lastJobId = nullptr;
+        int *lastJobId = new int();
+       
         shared_ptr<JobsList::JobEntry> maxIdJob = shell.getJobs()->getLastJob(lastJobId);
+        if(maxIdJob == nullptr)return;
+        cout << " i got here " << endl;
         pid_t pid = maxIdJob->m_pid;
         int jId = maxIdJob->m_jId;
+        cout << "the jid is" << jId << " and the pid is " << pid << endl; 
         std::cout << maxIdJob->m_cmnd << " " << pid << std::endl;
         shell.setCurrCmndLine(maxIdJob->m_cmnd);
         shell.setCurrJobId(jId);
@@ -319,14 +325,13 @@ void ForegroundCommand::execute() {
         } else {
             perror("smash error: waitpid failed");
         }
-    }
-    if(numOfArgs >= 3){
+    }else if(numOfArgs >= 3){
         std::cerr << "smash error: fg: invalid arguments" << std::endl;
         freeArgs(args);
         return;
-    }
-    if (args[1]) {
+    }else if (args[1]) {
         int jId = atoi(args[1]);
+        cout << " i got here too" << endl;
 
         if (jId <= 0) {
             std::cerr << "smash error: fg: invalid arguments" << std::endl;
@@ -458,11 +463,13 @@ void JobsList::removeJobById(int jobId){
 
         if(it->get()->m_jId == jobId){
             this->jobs.erase(it);
+            return;
         }else{
             if(it->get()->m_jId > max){
                 max = it->get()->m_jId;
             }
         }
+        it++;
     }
     this->m_maxJId = max;
 }
@@ -496,10 +503,12 @@ shared_ptr<JobsList::JobEntry> JobsList::getLastJob(int *lastJobId){
 
 void JobsList::killAllJobs(){
     removeFinishedJobs();
-    cout << "smash: sending SIGKILL signal to" << this->jobs.size() << " jobs:" << endl;
+    cout << "smash: sending SIGKILL signal to " << this->jobs.size() << " jobs:" << endl;
     for(auto& job : jobs){
         cout << job->m_pid << ": " << job->m_cmnd << endl;
-        DO_SYS(kill(job->m_pid, SIGKILL, kill));
+        if(kill(job->m_pid, SIGKILL)<0) {
+			cerr << "smash error: kill failed" << endl;
+		}
     }
 }
 //////////////////////////////////////////////////////////////////////////
@@ -512,7 +521,7 @@ void AliasCommand::execute() {
         args[i] = nullptr;
         i++;
     }
-    int numOfArgs = _parseCommandLine(getCommandLine(), args);
+     _parseCommandLine(getCommandLine(), args);
 
     if(args[1] == nullptr){
         if(shell.getAliases()->getMap().empty()){
@@ -564,7 +573,7 @@ void AliasCommand::execute() {
 //////////////////// UnAlias Command ///////////////////////
 void UnAliasCommand::execute() {
 
-    SmallShell &shell = SmallShell::getInstance();
+   
     Alias_system* Alias = SmallShell::getInstance().getAliases();
 
     char* args[COMMAND_MAX_ARGS];
@@ -787,7 +796,7 @@ void UnSetEnvCommand::execute() {
 ////////////////////////////////////////////////////////////
 //////////////////// External Command ///////////////////////
 void ExternalCommand::execute() {
-    SmallShell &shell = SmallShell::getInstance();
+    
     string cmdLine = _trim(m_cmndLine);
 
 
@@ -812,82 +821,83 @@ void ExternalCommand::execute() {
 //////////////////// special Commands //////////////////////
 ////////////////////////////////////////////////////////////
 ///////////////// IO redirection Command ///////////////////
-RedirectionCommand::RedirectionCommand(const char *cmd_line)
-        : Command(cmd_line)
-{
-
-    string input(cmd_line);
-
-    size_t redirectPos = input.find('>');
-    if (redirectPos == string::npos) {
-
-        m_cmnd  = _trim(input);
-        m_fName.clear();
-        m_type  = false;
+bool parseCommand(const std::string& input, std::string& command, std::string& outputFile, bool& appendMode) {
+    size_t redirectPos = input.find(">");
+    if (redirectPos == std::string::npos) {
+        // No redirection found
+        command = input;
+        return false;
     }
-    else {
-        m_type = (redirectPos + 1 < input.size() && input[redirectPos + 1] == '>');
+
+    // Determine if it's `>>` (append mode)
+    appendMode = (input[redirectPos + 1] == '>');
+    size_t outputFileStart = appendMode ? redirectPos + 2 : redirectPos + 1;
+
+    // Trim and extract parts
+    command = input.substr(0, redirectPos);
+    outputFile = input.substr(outputFileStart);
+
+    // Remove extra spaces from the file name
+    outputFile.erase(0, outputFile.find_first_not_of(" \t"));
+    outputFile.erase(outputFile.find_last_not_of(" \t") + 1);
 
 
-        size_t fileStart = redirectPos + (m_type ? 2 : 1);
+    // Remove trailing spaces from command
+    command.erase(command.find_last_not_of(" \t") + 1);
 
-        // Extract raw command and filename parts
-        m_cmnd  = input.substr(0, redirectPos);
-        m_fName = input.substr(fileStart);
-
-
-        m_cmnd  = _trim(m_cmnd);
-        m_fName = _trim(m_fName);
-    }
+    return true;
 }
+RedirectionCommand::RedirectionCommand(const char *cmd_line) : Command(cmd_line){}
 
 void RedirectionCommand::execute() {
-
-    int stdout_copy = dup(STDOUT_FILENO);
-    if (stdout_copy == -1) {
-        perror("smash error: dup failed");
+    int split = 0;
+    while (m_cmndLine[split] != '>') {
+        split++;
+    }
+    int size = ((string) m_cmndLine).length();
+    char cmdCopy[size]; // command
+    char path[size];
+    strcpy(cmdCopy, (((string) m_cmndLine).substr(0, split)).c_str());
+    strcpy(path, (((string) m_cmndLine).substr(split + 1 + (m_cmndLine[split + 1] == '>'))).c_str());
+    _removeBackgroundSign(path);
+    strcpy(path, _trim(path).c_str());
+    strcpy(cmdCopy, _trim(cmdCopy).c_str());
+    pid_t pid = fork();
+    if (pid == -1) {
+        perror("smash error: fork failed");
         return;
     }
-
-
-    string outFile = m_fName;
-    if (!outFile.empty() && outFile.back() == '&') {
-        outFile.pop_back();
+    if (pid == 0) { //son
+        if (setpgrp() == -1) {
+            perror("smash error: setpgrp failed");
+            exit(1);
+        }
+        if (close(1) == -1) {
+            perror("smash error: close failed");
+            exit(0);
+        }
+        int fd_id = -1;
+        if (m_cmndLine[split + 1] == '>') {
+            fd_id = open(path, O_CREAT | O_WRONLY | O_APPEND, 0644);
+            if (fd_id == -1) {
+                perror("smash error: open failed");
+                exit(0);
+            }
+        } else {
+            fd_id = open(path, O_CREAT | O_WRONLY | O_TRUNC, 0644);
+            if (fd_id == -1) {
+                perror("smash error: open failed");
+                exit(0);
+            }
+        }
+        SmallShell::getInstance().executeCommand(cmdCopy);
+        exit(0);
+    } else {//parent
+        if (waitpid(pid, NULL, WUNTRACED) == -1) {
+            perror("smash error: waitpid failed");
+            return;
+        }
     }
-
-
-    int flags = O_WRONLY | O_CREAT | (m_type ? O_APPEND : O_TRUNC);
-    int file_fd = open(outFile.c_str(), flags, 0644);
-    if (file_fd == -1) {
-        perror("smash error: open failed");
-
-        dup2(stdout_copy, STDOUT_FILENO);
-        close(stdout_copy);
-        return;
-    }
-
-    // 4) Redirect stdout → file_fd
-    if (dup2(file_fd, STDOUT_FILENO) == -1) {
-        perror("smash error: dup2 failed");
-        close(file_fd);
-        dup2(stdout_copy, STDOUT_FILENO);
-        close(stdout_copy);
-        return;
-    }
-    close(file_fd);
-
-
-    Command* cmd = SmallShell::getInstance().CreateCommand(m_cmnd.c_str());
-    if (cmd) {
-        cmd->execute();
-        delete cmd;
-    }
-
-
-    if (dup2(stdout_copy, STDOUT_FILENO) == -1) {
-        perror("smash error: dup2 failed");
-    }
-    close(stdout_copy);
 }
 
 ////////////////////////////////////////////////////////////
@@ -1082,7 +1092,7 @@ void DiskUsageCommand::execute() {
 ///////////////////// WhoAmI Command ///////////////////////
 void WhoAmICommand::execute() {
     char *argv[COMMAND_MAX_ARGS] = {nullptr};
-    int argc = _parseCommandLine(m_cmndLine, argv);
+     _parseCommandLine(m_cmndLine, argv);
 
     // ignore extra args; spec says just run whoami
     // get UID via raw syscall
@@ -1136,43 +1146,80 @@ void WhoAmICommand::execute() {
 }
 ////////////////////////////////////////////////////////////
 ///////////////////// NetInfo Command //////////////////////
+NetInfo::NetInfo(const char *cmd_line):Command(cmd_line){}
+std::string exec(const char* cmd) {
+    std::array<char, 128> buffer;
+    std::string result;
+    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd, "r"), pclose);
+    if (!pipe) {
+        throw std::runtime_error("popen() failed!");
+    }
+    while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
+        result += buffer.data();
+    }
+    // Remove trailing newlines or whitespace
+    result.erase(result.find_last_not_of(" \t\n\r") + 1);
+    return result;
+}
+std::string Get_Second_Word( const char *input){
+
+    std::istringstream stream(input);
+    std::string word;
+    int count = 0;
+    while (stream >> word) {
+        if(count == 1)return word;
+        ++count;
+    }
+    return "";
+}
+bool interfaceExists(const std::string& interface) {
+    std::string cmd = "ip link show " + interface + " 2>&1";
+    std::string output = exec(cmd.c_str());
+    return output.find("does not exist") == std::string::npos;
+}
+
+std::string getIPAddress(const std::string& interface) {
+    std::string cmd = "ip -4 addr show " + interface + " | grep -oP '(?<=inet\\s)\\d+(\\.\\d+){3}'";
+    return exec(cmd.c_str());
+}
+
+std::string getSubnetMask(const std::string& interface) {
+    std::string cmd = "ip -4 addr show " + interface + " | grep -oP '(?<=inet\\s)\\d+(\\.\\d+){3}/\\d+' | cut -d'/' -f2";
+    return exec(cmd.c_str());
+}
+
+std::string getDefaultGateway() {
+    std::string cmd = "ip route show default | grep -oP '(?<=via\\s)\\d+(\\.\\d+){3}'";
+    return exec(cmd.c_str());
+}
+
+std::string getDNSServers() {
+    std::string cmd = "grep -oP '(?<=nameserver\\s)\\d+(\\.\\d+){3}' /etc/resolv.conf | tr '\\n' ',' | sed 's/,$//'";
+    return exec(cmd.c_str());
+}
+
 void NetInfo::execute() {
-    // 1) Parse arguments
-    std::istringstream iss(m_cmndLine);
-    std::vector<std::string> args;
-    for (std::string tok; iss >> tok; )
-        args.push_back(tok);
+    std::string interface = Get_Second_Word(m_cmndLine);
 
-    if (args.size() < 2) {
-        std::cerr << "smash error: netinfo: interface not specified\n";
-        return;
-    }
-    const std::string iface = args[1];
-
-    // 2) Get IP & mask
-    std::string ip, mask;
-    if (!fetchInterface(iface, ip, mask)) {
-        std::cerr << "smash error: netinfo: interface "
-                  << iface << " does not exist\n";
+    if (!interfaceExists(interface)) {
+        std::cerr << "smash error: netinfo: interface " << interface << " does not exist" << std::endl;
         return;
     }
 
-    // 3) Get gateway
-    std::string gateway = fetchGateway(iface);
-
-    // 4) Get DNS servers
-    auto dns = fetchDNSServers();
-    std::string dnsStr = dns.empty() ? "N/A" : "";
-    for (size_t i = 0; i < dns.size(); ++i) {
-        dnsStr += dns[i];
-        if (i + 1 < dns.size()) dnsStr += ", ";
+    if (interface.empty()) {
+        std::cerr << "smash error: netinfo: interface not specified" << std::endl;
+        return;
     }
 
-    // 5) Print
-    std::cout << "IP Address: "    << ip       << "\n"
-              << "Subnet Mask: "   << mask     << "\n"
-              << "Default Gateway: " << gateway << "\n"
-              << "DNS Servers: "   << dnsStr   << "\n";
+    std::string ipAddress = getIPAddress(interface);
+    std::string subnetMask = getSubnetMask(interface);
+    std::string defaultGateway = getDefaultGateway();
+    std::string dnsServers = getDNSServers();
+
+    std::cout << "IP Address: " << ipAddress << std::endl;
+    std::cout << "Subnet Mask: " << subnetMask << std::endl;
+    std::cout << "Default Gateway: " << defaultGateway << std::endl;
+    std::cout << "DNS Servers: " << dnsServers << std::endl;
 }
 
 
@@ -1184,29 +1231,91 @@ void NetInfo::execute() {
 * Creates and returns a pointer to Command class which matches the given command line (cmd_line)
 */
 Command *SmallShell::CreateCommand(const char *cmd_line) {
-    // For example:
-    char *args[COMMAND_MAX_ARGS];
-    int i=0;
-    while (i < COMMAND_MAX_ARGS){
-        args[i] = nullptr;
-        i++;
-    }
-    int numOfArgs = _parseCommandLine(cmd_line, args);
-
-    SmallShell &shell = SmallShell::getInstance();
-    Alias_system* Alias = shell.getAliases();
-    const auto& map = Alias->getMap();
-    string cmd_s = _trim(string(cmd_line));
-    string firstWord = cmd_s.substr(0, cmd_s.find_first_of(" \n"));
-    if(cmd_s.empty()){
+	SmallShell& shell = SmallShell::getInstance();
+    string checkIfEmpty = (string) cmd_line;
+    if (checkIfEmpty.empty()) {
         return nullptr;
     }
-    for(const auto& alias : map){
-        if(firstWord == alias.first){
-            firstWord = alias.second;
-        }
+    char **splitInput = new char *[20];
+    int numOfWords;
+    numOfWords = _parseCommandLine(cmd_line, splitInput);
+    string cmd = _trim(splitInput[0]);
+    string prompt;
+    if (numOfWords > 1) {
+        prompt = (string) splitInput[1];
     }
+    delete[] splitInput;
+       if(cmd.compare("whoami") == 0 ) {
+        return new WhoAmICommand(cmd_line);
+    }
+    if(cmd.compare("netinfo") == 0 ) {
+        return new NetInfo(cmd_line);
+    }
+    if(cmd.compare("du") == 0 ) {
+        return new DiskUsageCommand(cmd_line);
+    }
+    if (((string) cmd_line).find("|") != string::npos) {
+        return new PipeCommand(cmd_line);
+    } else if (((string) cmd_line).find(">") != string::npos) {
+        return new RedirectionCommand(cmd_line);
+    } else if (cmd.compare("chprompt") == 0) {
+        if (numOfWords == 1) {
+            getInstance().setPrompt("");
+            return nullptr;
+        }
+        setPrompt(prompt);
+        return nullptr;
+    } else if (cmd.compare("showpid") == 0 || cmd.compare("showpid&") == 0) {
+        return new ShowPidCommand(cmd_line);
 
+    }else if (cmd.compare("pwd") == 0 || cmd.compare("pwd&") == 0) {
+        return new GetCurrDirCommand(cmd_line);
+
+    } else if (cmd.compare("cd") == 0 || cmd.compare("cd&") == 0) {
+        return new ChangeDirCommand(cmd_line);
+
+    } else if (cmd.compare("jobs") == 0 || cmd.compare("jobs&") == 0) {
+        return new JobsCommand(cmd_line, shell.getJobs());
+
+    } else if (cmd.compare("fg") == 0 || cmd.compare("fg&") == 0) {
+        return new ForegroundCommand(cmd_line, shell.getJobs());
+
+    }else if (cmd.compare("quit") == 0 || cmd.compare("quit&") == 0) {
+        return new QuitCommand(cmd_line, shell.getJobs());
+
+    }else if (cmd.compare("kill") == 0 || cmd.compare("kill&") == 0) {
+        return new KillCommand(cmd_line, shell.getJobs());
+    }
+    else if (cmd.compare("alias") == 0 || cmd.compare("alias&") == 0) {
+        return new AliasCommand(cmd_line);
+
+    }else if (cmd.compare("unalias") == 0 || cmd.compare("unalias&") == 0) {
+        return new UnAliasCommand(cmd_line);
+
+    }else if (cmd.compare("unsetenv") == 0 || cmd.compare("unsetenv&") == 0) {
+        return new UnSetEnvCommand(cmd_line);
+
+    }else if (cmd.compare("watchproc") == 0 || cmd.compare("watchproc&") == 0) {
+        return new WatchProcCommand(cmd_line);
+
+    }
+    else {
+        return new ExternalCommand(cmd_line);
+    }
+    return nullptr;
+}
+
+void SmallShell::executeCommand(const char *cmd_line) {
+    Command *cmd = CreateCommand(cmd_line);
+    //m_jobList->removeFinishedJobs();
+    if (cmd != nullptr) {
+        cmd->execute();
+    }
+    delete cmd;
+    // Please note that you must fork smash process for some commands (e.g., external commands....)
+
+}
+/*
     if(firstWord.compare("whoami") == 0 ) {
         return new WhoAmICommand(cmd_line);
     }
@@ -1282,13 +1391,14 @@ void SmallShell::executeCommand(const char *cmd_line) {
     bool isBg = _isBackgroundComamnd(commandLine);
 
     if (cmd) {
-        BuiltInCommand* builtInCmd = dynamic_cast<BuiltInCommand*>(cmd);
+          BuiltInCommand* builtInCmd = dynamic_cast<BuiltInCommand*>(cmd);
         if (builtInCmd) {
             builtInCmd->execute();
         }
         ExternalCommand* exCmd = dynamic_cast<ExternalCommand*>(cmd);
         if(exCmd){
-            if (!isBg || exCmd->is_complex) {
+            if (isBg || exCmd->is_complex) {
+				cout << "im not BG" << endl;
                 pid_t pid = fork();
                 if (pid == 0) { // Child process
                     setpgrp();
@@ -1316,10 +1426,11 @@ void SmallShell::executeCommand(const char *cmd_line) {
                 }
             }
         }
+      
     }
     if (cmd) {
         delete cmd;
     }
     jobs->removeFinishedJobs();
 
-}
+}*/
