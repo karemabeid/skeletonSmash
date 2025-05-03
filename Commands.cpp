@@ -241,6 +241,11 @@ void GetCurrDirCommand::execute() {
 //////////////////////////////////////////////////////////////////////////////
 ////////////////////////// CD //////////////////////////
 void ChangeDirCommand::execute() {
+	  /*  if(plastPwd[0] != nullptr){	
+         cout << "the prev dir is " << plastPwd[0] << endl;
+        
+    } */
+    SmallShell& shell = SmallShell::getInstance();
     char *args[COMMAND_MAX_ARGS];
     int i=0;
     while (i<COMMAND_MAX_ARGS){
@@ -251,6 +256,7 @@ void ChangeDirCommand::execute() {
 
     char currentWD[COMMAND_MAX_LENGTH];
     getcwd(currentWD , COMMAND_MAX_LENGTH);
+    //plastPwd[1] = currentWD;
 
     if(args[2] != nullptr) {
         writeErr("smash error: cd: too many arguments\n");
@@ -258,24 +264,46 @@ void ChangeDirCommand::execute() {
         return;
     }
 
-    if(!strcmp(args[1] , "-") && args[1]) {
-        if(SmallShell::getInstance().getPrevDir() == nullptr) {
+    if(args[1] &&  strcmp(args[1] , "-") == 0) {
+        if(shell.prevdir == nullptr) {
             writeErr("smash error: cd: OLDPWD not set\n");
         }else{
-            if(!chdir(SmallShell::getInstance().getPrevDir())) {
-                SmallShell::getInstance().setCurrDir(SmallShell::getInstance().getPrevDir());
-                SmallShell::getInstance().setPrevDir(currentWD);
+			
+			/*cout << "the prev dir is " << plastPwd[0] << endl;
+            if(chdir(plastPwd[0])!=-1) {
+   
+                char *tmp = plastPwd[1];
+                plastPwd[1] = plastPwd[0];
+                plastPwd[0] = tmp;
+               
             }else {
                 perror("smash error: chdir failed");
-            }
+            }*/
+            cout << "the prev dir is " << shell.prevdir << endl;
+            while(chdir(shell.prevdir)!=-1) {
+   
+                shell.prevdir = currentWD;
+                break;
+               
+            }/*else {
+                perror("smash error: chdir failed");
+            }*/
         }
-    }else {
+    }else if(!args[1]) {
+		}
+    else {
         if(chdir(args[1])) {
             perror("smash error: chdir failed");
         }else {
-            SmallShell::getInstance().setPrevDir(currentWD);
+            shell.prevdir = currentWD;
+            cout << "just set the prev dir to" << shell.prevdir << endl;
+            //cout << "the curr dir is " << plastPwd[1] << endl;
         }
     }
+    for(int i = 0 ; i < COMMAND_MAX_LENGTH ; i++){
+		currentWD[i] = 0;
+	}
+	
     freeArgs(args);
 
 }
@@ -1224,7 +1252,20 @@ void NetInfo::execute() {
 
 
 
-
+SmallShell::SmallShell(): m_jobs(new JobsList()) , m_aliasSystem(new Alias_system())
+            , m_curr_cmndLine(""),m_dir_arr(new char*[2]), m_prompt("smash"){
+				char currentWD[COMMAND_MAX_LENGTH] ;
+				if(getcwd( currentWD , COMMAND_MAX_LENGTH) !=nullptr) {
+					m_dir_arr[1] = currentWD;
+					}
+					else{
+						perror("smash error: getcwd failed");
+					}
+        m_dir_arr[0] = nullptr;
+        prevdir = nullptr;
+        m_curr_jid = -1;
+        m_curr_pid = -1;
+    }
 
 
 /**
@@ -1272,7 +1313,7 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new GetCurrDirCommand(cmd_line);
 
     } else if (cmd.compare("cd") == 0 || cmd.compare("cd&") == 0) {
-        return new ChangeDirCommand(cmd_line);
+        return new ChangeDirCommand(cmd_line,shell.getDirArr());
 
     } else if (cmd.compare("jobs") == 0 || cmd.compare("jobs&") == 0) {
         return new JobsCommand(cmd_line, shell.getJobs());

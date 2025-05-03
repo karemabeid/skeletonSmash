@@ -163,8 +163,9 @@ public:
 
 class ChangeDirCommand : public BuiltInCommand {
 public:
+    char **plastPwd;
     // TODO: Add your data members public:
-    ChangeDirCommand(const char *cmd_line) : BuiltInCommand(cmd_line){}
+    ChangeDirCommand(const char *cmd_line,char **dir_arr) : BuiltInCommand(cmd_line),plastPwd(dir_arr){}
 
     virtual ~ChangeDirCommand() {
     }
@@ -435,15 +436,11 @@ private:
     int m_curr_jid;
     int m_curr_pid;
 
-    SmallShell(): m_jobs(new JobsList()) , m_aliasSystem(new Alias_system())
-            , m_curr_cmndLine(""),m_dir_arr(new char*[2]), m_prompt("smash"){
-        m_dir_arr[0] = nullptr;
-        m_dir_arr[1] = nullptr;
-        m_curr_jid = -1;
-        m_curr_pid = -1;
-    }
+
+    SmallShell();
 
 public:
+    char *prevdir;
 
     Command *CreateCommand(const char *cmd_line);
 
@@ -462,6 +459,7 @@ public:
         if(m_dir_arr[0] != nullptr) delete m_dir_arr[0];
         if(m_dir_arr[1] != nullptr) delete m_dir_arr[1];
         delete[] m_dir_arr;
+        if(prevdir!= nullptr) delete prevdir;
     };
 
     void executeCommand(const char *cmd_line);
@@ -494,6 +492,9 @@ public:
     char* getCurrDir() const{
         return m_dir_arr[1];
     }
+    char** getDirArr(){
+		return m_dir_arr;
+	}
     void setCurrDir(char* Dir){
         m_dir_arr[1] = Dir;
     }
