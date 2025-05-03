@@ -431,16 +431,14 @@ private:
     JobsList* m_jobs;
     Alias_system* m_aliasSystem;
     string m_curr_cmndLine;
-    char ** m_dir_arr;
     string m_prompt;
     int m_curr_jid;
     int m_curr_pid;
-
-
+    std::string currDir_;
+    std::string prevDir_;
     SmallShell();
 
 public:
-    char *prevdir;
 
     Command *CreateCommand(const char *cmd_line);
 
@@ -483,22 +481,6 @@ public:
     void setPrompt(string newPrompt){
         m_prompt = newPrompt;
     }
-    char* getPrevDir() const{
-        return m_dir_arr[0];
-    }
-    void setPrevDir(char* Dir){
-        m_dir_arr[0] = Dir;
-    }
-    char* getCurrDir() const{
-        return m_dir_arr[1];
-    }
-    char** getDirArr(){
-		return m_dir_arr;
-	}
-    void setCurrDir(char* Dir){
-        m_dir_arr[1] = Dir;
-    }
-
     void setCurrJobId(int JobId){
         m_curr_jid = JobId;
     }
@@ -510,6 +492,18 @@ public:
     }
     int getCurrJobPid(){
         return m_curr_pid;
+    }
+    const string& getCurrDir() const {
+        return currDir_;
+    }
+    const string& getPrevDir() const {
+        return prevDir_;
+    }
+    void setCurrDir(const std::string &d) {
+        currDir_ = d;
+    }
+    void setPrevDir(const std::string &d) {
+        prevDir_ = d;
     }
 };
 
