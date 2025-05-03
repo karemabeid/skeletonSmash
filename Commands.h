@@ -163,9 +163,8 @@ public:
 
 class ChangeDirCommand : public BuiltInCommand {
 public:
-    char **plastPwd;
     // TODO: Add your data members public:
-    ChangeDirCommand(const char *cmd_line,char **dir_arr) : BuiltInCommand(cmd_line),plastPwd(dir_arr){}
+    ChangeDirCommand(const char *cmd_line) : BuiltInCommand(cmd_line){}
 
     virtual ~ChangeDirCommand() {
     }
@@ -454,10 +453,6 @@ public:
     ~SmallShell(){
         delete m_jobs;
         delete m_aliasSystem;
-        if(m_dir_arr[0] != nullptr) delete m_dir_arr[0];
-        if(m_dir_arr[1] != nullptr) delete m_dir_arr[1];
-        delete[] m_dir_arr;
-        if(prevdir!= nullptr) delete prevdir;
     };
 
     void executeCommand(const char *cmd_line);

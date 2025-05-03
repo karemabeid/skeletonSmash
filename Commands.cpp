@@ -243,61 +243,41 @@ void GetCurrDirCommand::execute() {
 void ChangeDirCommand::execute() {
     SmallShell &shell = SmallShell::getInstance();
 
-    // 1) parse
     char *args[COMMAND_MAX_ARGS] = {nullptr};
-    int argc = _parseCommandLine(getCmdLine(), args);
+    int argc = _parseCommandLine(m_cmndLine, args);
     if (argc > 2) {
         writeErr("smash error: cd: too many arguments\n");
         freeArgs(args);
         return;
     }
 
-    std::string old = shell.getCurrDir();
-    std::string target;
+    string old = shell.getCurrDir();
+    string target;
 
-    // 2) handle `cd -`
     if (argc == 2 && std::strcmp(args[1], "-") == 0) {
         if (shell.getPrevDir().empty()) {
             writeErr("smash error: cd: OLDPWD not set\n");
             freeArgs(args);
             return;
         }
-        target = shell.getPrevDir();
-        // (optionally print it, like bash does)
-        // std::cout << target << "\n";
+        target = shell.getPrevDir();    
+        cout << target << endl;
     }
-        // 3) handle `cd <dir>`
     else if (argc == 2) {
         target = args[1];
     }
-        // 4) handle plain `cd`
-    else {
-        // typically go to $HOME; if you want:
-        const char *h = getenv("HOME");
-        if (!h) {
-            writeErr("smash error: cd: HOME not set\n");
-            freeArgs(args);
-            return;
-        }
-        target = h;
-    }
 
-    // 5) actually chdir
     if (::chdir(target.c_str()) != 0) {
-        // prints e.g. "smash error: chdir failed: No such file or directory"
         perror("smash error: chdir failed");
         freeArgs(args);
         return;
     }
 
-    // 6) update shell’s directories
     shell.setPrevDir(old);
-    // fetch the new cwd (in case target was relative or a symlink)
     char buf[COMMAND_MAX_LENGTH];
     if (getcwd(buf, sizeof(buf))) {
         shell.setCurrDir(buf);
     } else {
-        // fallback if getcwd fails
         shell.setCurrDir(target);
     }
 
@@ -334,10 +314,8 @@ void ForegroundCommand::execute() {
        
         shared_ptr<JobsList::JobEntry> maxIdJob = shell.getJobs()->getLastJob(lastJobId);
         if(maxIdJob == nullptr)return;
-        cout << " i got here " << endl;
         pid_t pid = maxIdJob->m_pid;
         int jId = maxIdJob->m_jId;
-        cout << "the jid is" << jId << " and the pid is " << pid << endl; 
         std::cout << maxIdJob->m_cmnd << " " << pid << std::endl;
         shell.setCurrCmndLine(maxIdJob->m_cmnd);
         shell.setCurrJobId(jId);
@@ -355,7 +333,6 @@ void ForegroundCommand::execute() {
         return;
     }else if (args[1]) {
         int jId = atoi(args[1]);
-        cout << " i got here too" << endl;
 
         if (jId <= 0) {
             std::cerr << "smash error: fg: invalid arguments" << std::endl;
@@ -1277,6 +1254,18 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
     numOfWords = _parseCommandLine(cmd_line, splitInput);
     string cmd = _trim(splitInput[0]);
     string prompt;
+    Alias_system* Alias = shell.getAliases();
+    const auto& map = Alias->getMap();
+    string cmd_s = _trim(string(cmd_line));
+    string firstWord = cmd_s.substr(0, cmd_s.find_first_of(" \n"));
+    if(cmd_s.empty()){
+        return nullptr;
+    }
+    for(const auto& alias : map){
+        if(firstWord == alias.first){
+            cmd = alias.second;
+        }
+    }
     if (numOfWords > 1) {
         prompt = (string) splitInput[1];
     }
@@ -1296,7 +1285,7 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new RedirectionCommand(cmd_line);
     } else if (cmd.compare("chprompt") == 0) {
         if (numOfWords == 1) {
-            getInstance().setPrompt("");
+            getInstance().setPrompt("smash");
             return nullptr;
         }
         setPrompt(prompt);
@@ -1308,7 +1297,7 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new GetCurrDirCommand(cmd_line);
 
     } else if (cmd.compare("cd") == 0 || cmd.compare("cd&") == 0) {
-        return new ChangeDirCommand(cmd_line,shell.getDirArr());
+        return new ChangeDirCommand(cmd_line);
 
     } else if (cmd.compare("jobs") == 0 || cmd.compare("jobs&") == 0) {
         return new JobsCommand(cmd_line, shell.getJobs());
@@ -1341,7 +1330,7 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
     return nullptr;
 }
 
-void SmallShell::executeCommand(const char *cmd_line) {
+/*void SmallShell::executeCommand(const char *cmd_line) {
     Command *cmd = CreateCommand(cmd_line);
     //m_jobList->removeFinishedJobs();
     if (cmd != nullptr) {
@@ -1351,7 +1340,7 @@ void SmallShell::executeCommand(const char *cmd_line) {
     // Please note that you must fork smash process for some commands (e.g., external commands....)
 
 }
-/*
+
     if(firstWord.compare("whoami") == 0 ) {
         return new WhoAmICommand(cmd_line);
     }
@@ -1410,7 +1399,7 @@ void SmallShell::executeCommand(const char *cmd_line) {
         return new ExternalCommand(cmd_line);
     }
     return nullptr;
-}
+}*/
 
 void SmallShell::executeCommand(const char *cmd_line) {
     SmallShell& shell = SmallShell::getInstance();
@@ -1422,19 +1411,22 @@ void SmallShell::executeCommand(const char *cmd_line) {
 
     Command* cmd = CreateCommand(cmd_line);
 
-    const char* commandLine = m_curr_cmndLine.c_str();
+    const char* commandLine = cmd_line;
 
     bool isBg = _isBackgroundComamnd(commandLine);
 
+    ExternalCommand* exCmd = dynamic_cast<ExternalCommand*>(cmd);
+    BuiltInCommand* builtInCmd = dynamic_cast<BuiltInCommand*>(cmd);
+
     if (cmd) {
-          BuiltInCommand* builtInCmd = dynamic_cast<BuiltInCommand*>(cmd);
-        if (builtInCmd) {
+          
+        if (builtInCmd != nullptr) {
             builtInCmd->execute();
         }
-        ExternalCommand* exCmd = dynamic_cast<ExternalCommand*>(cmd);
-        if(exCmd){
-            if (isBg || exCmd->is_complex) {
-				cout << "im not BG" << endl;
+        
+        else if(exCmd){
+            if (!isBg  || exCmd->is_complex) {
+			
                 pid_t pid = fork();
                 if (pid == 0) { // Child process
                     setpgrp();
@@ -1461,7 +1453,9 @@ void SmallShell::executeCommand(const char *cmd_line) {
                     perror("smash error: fork failed");
                 }
             }
-        }
+        }else{
+			cmd->execute();
+		}
       
     }
     if (cmd) {
@@ -1469,4 +1463,4 @@ void SmallShell::executeCommand(const char *cmd_line) {
     }
     jobs->removeFinishedJobs();
 
-}*/
+}
