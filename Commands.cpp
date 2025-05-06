@@ -996,42 +996,54 @@ void PipeCommand::execute() {
 
 ////////////////////////////////////////////////////////////
 /////////////////// DiskUsage Command //////////////////////
-long DiskUsageCommand::getBlocks(const std::string &path) {
-    struct stat sb;
-    if (lstat(path.c_str(), &sb) < 0) {
-        perror("smash error: lstat failed");
-       return -1;
+static bool lstatPath(const char *path, struct stat &st) {
+    if (syscall(SYS_lstat, path, &st) < 0) {
+        writeErr("smash error: lstat failed\n");
+        return false;
     }
+    return true;
+}
 
-    long total = sb.st_blocks;
+static long getBlocks(const std::string &path) {
+    struct stat st;
+    if (!lstatPath(path.c_str(), st)) return -1;
+    long total = st.st_blocks;
 
-    if (S_ISDIR(sb.st_mode)) {
-        DIR *dir = opendir(path.c_str());
-      if (!dir) {
-            perror("smash error: opendir failed");
+    // If directory, open & iterate with getdents64
+    if (S_ISDIR(st.st_mode)) {
+        int dir_fd = syscall(SYS_open, path.c_str(), O_RDONLY | O_DIRECTORY, 0);
+        if (dir_fd < 0) {
+            writeErr("smash error: open failed\n");
             return -1;
         }
 
-        struct dirent *entry;
-        while ((entry = readdir(dir)) != nullptr) {
-            const char *name = entry->d_name;
-            // skip "." and ".."
-            if (name[0] == '.' &&
-               (name[1] == '\0' ||
-               (name[1] == '.' && name[2] == '\0')))
-            {
-                continue;
+        char buf[4096];
+        while (true) {
+            int nread = syscall(SYS_getdents64, dir_fd, buf, sizeof(buf));
+            if (nread < 0) {
+                writeErr("smash error: getdents64 failed\n");
+                syscall(SYS_close, dir_fd);
+                return -1;
             }
+            if (nread == 0) break;
 
-            std::string child = path + "/" + name;
-            long cb = getBlocks(child);
-            if (cb < 0) {
-                closedir(dir);
-                return -1;    // propagate failure
+            int bpos = 0;
+            while (bpos < nread) {
+                struct linux_dirent64 *d = (struct linux_dirent64 *)(buf + bpos);
+                char *name = d->d_name;
+                if (strcmp(name, ".") && strcmp(name, "..")) {
+                    std::string child = path + "/" + name;
+                    long cb = getBlocks(child);
+                    if (cb < 0) {
+                        syscall(SYS_close, dir_fd);
+                        return -1;
+                    }
+                    total += cb;
+                }
+                bpos += d->d_reclen;
             }
-            total += cb;
         }
-        closedir(dir);
+        syscall(SYS_close, dir_fd);
     }
 
     return total;
@@ -1039,54 +1051,42 @@ long DiskUsageCommand::getBlocks(const std::string &path) {
 
 void DiskUsageCommand::execute() {
 
-    char *args[COMMAND_MAX_ARGS];
-    for (int i = 0; i < COMMAND_MAX_ARGS; ++i)
-        args[i] = nullptr;
-    int numArgs = _parseCommandLine(getCommandLine(), args);
+    char *args[COMMAND_MAX_ARGS] = {nullptr};
+    int argc = _parseCommandLine(getCmdLine(), args);
 
-    // 2) Too many arguments?
-    if (numArgs > 2) {
-        std::cerr << "smash error: du: too many arguments\n";
-        // free allocated args
-        for (int i = 0; i < numArgs; ++i) free(args[i]);
+    if (argc > 2) {
+        writeErr("smash error: du: too many arguments\n");
+        freeArgs(args);
         return;
     }
 
-    string dir = (numArgs == 2 ? args[1] : ".");
 
-    struct stat sb;
-    if (stat(dir.c_str(), &sb) < 0) {
-        if (errno == ENOENT) {
-            std::cerr << "smash error: du: directory "
-                      << dir << " does not exist\n";
-        } else {
-            perror("smash error: stat failed");
-        }
-        for (int i = 0; i < numArgs; ++i) free(args[i]);
-        return;
-    }
-    if (!S_ISDIR(sb.st_mode)) {
-        std::cerr << "smash error: du: directory "
-                  << dir << " does not exist\n";
-        for (int i = 0; i < numArgs; ++i) free(args[i]);
+    std::string dir = (argc == 2 ? args[1] : ".");
+
+
+    struct stat st;
+    if (!lstatPath(dir.c_str(), st) || !S_ISDIR(st.st_mode)) {
+        writeErr(("smash error: du: directory " + dir + " does not exist\n").c_str());
+        freeArgs(args);
         return;
     }
 
 
     long blocks = getBlocks(dir);
-    // getBlocks already called perror on failure
     if (blocks < 0) {
-        for (int i = 0; i < numArgs; ++i) free(args[i]);
+        freeArgs(args);
         return;
     }
-    long kb = (blocks * 512 + 1023) / 1024;
-    std::cout << "Total disk usage: "
-              << kb
-              << " KB\n";
 
-    // 8) Free allocated args
-    for (int i = 0; i < numArgs; ++i)
-        free(args[i]);
+
+    long kb = (blocks * 512 + 1023) / 1024;
+
+
+    std::string out = "Total disk usage: " + std::to_string(kb) + " KB\n";
+    syscall(SYS_write, STDOUT_FILENO, out.c_str(), out.size());
+
+
+    freeArgs(args);
 }
 
 ////////////////////////////////////////////////////////////
