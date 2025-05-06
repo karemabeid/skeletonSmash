@@ -120,13 +120,7 @@ bool readAll(const char *path, std::string &out) {
     return true;
 }
 
-struct linux_dirent64 {
-    ino64_t        d_ino;    /* 64-bit inode number */
-    off64_t        d_off;    /* 64-bit offset to next dirent */
-    unsigned short d_reclen; /* length of this record */
-    unsigned char  d_type;   /* file type (DT_REG, DT_DIR, etc.) */
-    char           d_name[]; /* filename (null-terminated) */
-};
+
 
 
 //end of our helper functions
@@ -188,7 +182,6 @@ void ChangeDirCommand::execute() {
             return;
         }
         target = shell.getPrevDir();    
-        cout << target << endl;
     }
     else if (argc == 2) {
         target = args[1];
@@ -306,7 +299,7 @@ void QuitCommand::execute() {
         i++;
     }
     int numOfArgs = _parseCommandLine(getCommandLine(), args);
-    if (strcmp(args[1], "kill") == 0 && numOfArgs>= 2) {
+    if (args[1] && strcmp(args[1], "kill") == 0 && numOfArgs>= 2) {
         SmallShell& shell = SmallShell::getInstance();
         shell.getJobs()->killAllJobs();
     }
@@ -698,11 +691,11 @@ void UnSetEnvCommand::execute() {
         size_t nlen = strlen(name);
         bool found = false;
 
-        // scan environ for "NAME="
+        
         for (char **e = environ; *e; ++e) {
             if (strncmp(*e, name, nlen) == 0 && (*e)[nlen]=='=') {
                 found = true;
-                // shift remaining pointers left
+                
                 for (char **dst = e; *dst; ++dst) {
                     *dst = *(dst+1);
                 }
@@ -752,25 +745,25 @@ void ExternalCommand::execute() {
 bool parseCommand(const std::string& input, std::string& command, std::string& outputFile, bool& appendMode) {
     size_t redirectPos = input.find(">");
     if (redirectPos == std::string::npos) {
-        // No redirection found
+        
         command = input;
         return false;
     }
 
-    // Determine if it's `>>` (append mode)
+    
     appendMode = (input[redirectPos + 1] == '>');
     size_t outputFileStart = appendMode ? redirectPos + 2 : redirectPos + 1;
 
-    // Trim and extract parts
+    
     command = input.substr(0, redirectPos);
     outputFile = input.substr(outputFileStart);
 
-    // Remove extra spaces from the file name
+    
     outputFile.erase(0, outputFile.find_first_not_of(" \t"));
     outputFile.erase(outputFile.find_last_not_of(" \t") + 1);
 
 
-    // Remove trailing spaces from command
+    
     command.erase(command.find_last_not_of(" \t") + 1);
 
     return true;
@@ -820,7 +813,7 @@ void RedirectionCommand::execute() {
         }
         SmallShell::getInstance().executeCommand(cmdCopy);
         exit(0);
-    } else {//parent
+    } else {
         if (waitpid(pid, NULL, WUNTRACED) == -1) {
             perror("smash error: waitpid failed");
             return;
@@ -899,12 +892,9 @@ void PipeCommand::execute() {
 
         setpgrp();
         close(pipefd[1]);
-
-        // redirect stdin ← read end of pipe
         dup2(pipefd[0], STDIN_FILENO);
         close(pipefd[0]);
 
-        // execute the right command
         Command* c = SmallShell::getInstance().CreateCommand(reader.c_str());
         if (c) {
             c->execute();
@@ -913,7 +903,6 @@ void PipeCommand::execute() {
         _exit(0);
     }
 
-    // 4) parent closes both ends and waits
     close(pipefd[0]);
     close(pipefd[1]);
 
@@ -923,6 +912,14 @@ void PipeCommand::execute() {
 
 ////////////////////////////////////////////////////////////
 /////////////////// DiskUsage Command //////////////////////
+struct linux_dirent64 {
+    ino64_t        d_ino;    
+    off64_t        d_off;    
+    unsigned short d_reclen; 
+    unsigned char  d_type;   
+    char           d_name[]; 
+};
+
 static bool lstatPath(const char *path, struct stat &st) {
     if (syscall(SYS_lstat, path, &st) < 0) {
         writeErr("smash error: lstat failed\n");
@@ -931,12 +928,12 @@ static bool lstatPath(const char *path, struct stat &st) {
     return true;
 }
 
-static long getBlocks(const std::string &path) {
+long DiskUsageCommand::getBlocks(const std::string &path) {
     struct stat st;
     if (!lstatPath(path.c_str(), st)) return -1;
     long total = st.st_blocks;
 
-    // If directory, open & iterate with getdents64
+    
     if (S_ISDIR(st.st_mode)) {
         int dir_fd = syscall(SYS_open, path.c_str(), O_RDONLY | O_DIRECTORY, 0);
         if (dir_fd < 0) {
@@ -989,7 +986,7 @@ void DiskUsageCommand::execute() {
 
 
     std::string dir = (argc == 2 ? args[1] : ".");
-
+    
 
     struct stat st;
     if (!lstatPath(dir.c_str(), st) || !S_ISDIR(st.st_mode)) {
@@ -1022,23 +1019,21 @@ void WhoAmICommand::execute() {
     char *argv[COMMAND_MAX_ARGS] = {nullptr};
      _parseCommandLine(m_cmndLine, argv);
 
-    // ignore extra args; spec says just run whoami
-    // get UID via raw syscall
     uid_t uid = syscall(SYS_getuid);
 
-    // read /etc/passwd
+    
     std::string passwd;
     if (!readAll("/etc/passwd", passwd)) {
         freeArgs(argv);
         return;
     }
 
-    // scan lines for matching UID
-    std::istringstream iss(passwd);
-    std::string line, username, homedir;
+    string line, username, homedir;
+    istringstream iss(passwd);
+    
     bool found = false;
     while (std::getline(iss, line)) {
-        // format: name:passwd:uid:gid:gecos:home:shell
+        
         size_t p1 = line.find(':'), p2, p3, p4, p5, p6;
         if (p1==std::string::npos) continue;
         p2 = line.find(':', p1+1);
@@ -1049,7 +1044,7 @@ void WhoAmICommand::execute() {
         if (p1==std::string::npos||p2==std::string::npos||p3==std::string::npos
             ||p4==std::string::npos||p5==std::string::npos) continue;
 
-        // extract uid field
+       
         int file_uid = std::stoi(line.substr(p2+1, p3-p2-1));
         if ((uid_t)file_uid == uid) {
             username = line.substr(0, p1);
@@ -1066,7 +1061,7 @@ void WhoAmICommand::execute() {
         return;
     }
 
-    // output via raw syscall.write (or you can use cout—it's not a shortcut for logic)
+   
     std::string out = username + " " + homedir + "\n";
     syscall(SYS_write, STDOUT_FILENO, out.c_str(), out.size());
 
@@ -1085,7 +1080,6 @@ std::string exec(const char* cmd) {
     while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
         result += buffer.data();
     }
-    // Remove trailing newlines or whitespace
     result.erase(result.find_last_not_of(" \t\n\r") + 1);
     return result;
 }
@@ -1257,76 +1251,6 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
     return nullptr;
 }
 
-/*void SmallShell::executeCommand(const char *cmd_line) {
-    Command *cmd = CreateCommand(cmd_line);
-    //m_jobList->removeFinishedJobs();
-    if (cmd != nullptr) {
-        cmd->execute();
-    }
-    delete cmd;
-    // Please note that you must fork smash process for some commands (e.g., external commands....)
-
-}
-
-    if(firstWord.compare("whoami") == 0 ) {
-        return new WhoAmICommand(cmd_line);
-    }
-    if(firstWord.compare("netinfo") == 0 ) {
-        return new NetInfo(cmd_line);
-    }
-    if(firstWord.compare("du") == 0 ) {
-        return new DiskUsageCommand(cmd_line);
-    }
-
-    if (cmd_s.find('|') != string::npos) {
-        return new PipeCommand(cmd_line);
-    }
-    if (cmd_s.find('>') != string::npos) {
-        return new RedirectionCommand(cmd_line);
-    }
-
-    if (firstWord.compare("chprompt") == 0 || firstWord.compare("chprompt&") == 0) {
-        return new chpromptCommand(cmd_line);
-
-    } else if (firstWord.compare("showpid") == 0 || firstWord.compare("showpid&") == 0) {
-        return new ShowPidCommand(cmd_line);
-
-    }else if (firstWord.compare("pwd") == 0 || firstWord.compare("pwd&") == 0) {
-        return new GetCurrDirCommand(cmd_line);
-
-    } else if (firstWord.compare("cd") == 0 || firstWord.compare("cd&") == 0) {
-        return new ChangeDirCommand(cmd_line);
-
-    } else if (firstWord.compare("jobs") == 0 || firstWord.compare("jobs&") == 0) {
-        return new JobsCommand(cmd_line, shell.getJobs());
-
-    } else if (firstWord.compare("fg") == 0 || firstWord.compare("fg&") == 0) {
-        return new ForegroundCommand(cmd_line, shell.getJobs());
-
-    }else if (firstWord.compare("quit") == 0 || firstWord.compare("quit&") == 0) {
-        return new QuitCommand(cmd_line, shell.getJobs());
-
-    }else if (firstWord.compare("kill") == 0 || firstWord.compare("kill&") == 0) {
-        return new KillCommand(cmd_line, shell.getJobs());
-    }
-    else if (firstWord.compare("alias") == 0 || firstWord.compare("alias&") == 0) {
-        return new AliasCommand(cmd_line);
-
-    }else if (firstWord.compare("unalias") == 0 || firstWord.compare("unalias&") == 0) {
-        return new UnAliasCommand(cmd_line);
-
-    }else if (firstWord.compare("unsetenv") == 0 || firstWord.compare("unsetenv&") == 0) {
-        return new UnSetEnvCommand(cmd_line);
-
-    }else if (firstWord.compare("watchproc") == 0 || firstWord.compare("watchproc&") == 0) {
-        return new WatchProcCommand(cmd_line);
-
-    }
-    else {
-        return new ExternalCommand(cmd_line);
-    }
-    return nullptr;
-}*/
 
 void SmallShell::executeCommand(const char *cmd_line) {
     SmallShell& shell = SmallShell::getInstance();

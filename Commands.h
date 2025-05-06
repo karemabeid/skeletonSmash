@@ -123,8 +123,7 @@ public:
     virtual ~DiskUsageCommand() = default;
 
     void execute() override;
-private:
-    static long getBlocks(const std::string &path);
+    long getBlocks(const std::string &path);
 };
 
 class WhoAmICommand : public Command {
@@ -315,17 +314,17 @@ public:
 public:
     Alias_system() {
         m_AlNum = 0;
-        m_og = {"chprompt", "cd", "quit", "kill", "showpid", "pwd", "alias", "unalias",
-                      ">>", "<<", ">", "<", "|", "listdir", "jobs", "fg", "getuser", "watch"
-                      ,"|&","cd&", "jobs&","chprompt&", "showpid&", "pwd&", "fg&", "quit&",
-                      "kill&", "alias&", "unalias&", "listdir&" , "netinfo" , "netinfo&" ,
-                      "getuser&" , "whoami" , "whoami&"};
+        m_og = { "cd", "quit", "showpid", "pwd", "alias", "unalias",
+                 ">>", "<<", ">", "<", "|", "listdir", "jobs", "fg", "getuser", "watch"
+                 ,"|&","cd&", "jobs&" , "chprompt" , "chprompt&" , "showpid&" , "cat" , "ls", "pwd&", "fg&", "quit&",
+                  "kill" , "kill&", "alias&", "unalias&", "watchproc" , "watchproc&" , "unsetenv" , 
+                 "unsetenv&", "netinfo" , "netinfo&" , "whoami" , "whoami&", "du" , "du&"};
     }
 
     int addAlias(string aliasName , string value) {
 
          if(m_og.find(value)==m_og.end()) {
-              std::cerr<<"smash error: alias: invalid alias format"<<std::endl;
+              cerr<<"smash error: alias: invalid alias format"<<std::endl;
               return 0;
           }
 
