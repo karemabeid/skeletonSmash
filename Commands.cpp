@@ -535,7 +535,7 @@ void AliasCommand::execute() {
                 if (it != map.end()) {
                     cout << key << "='" << it->second << "'" << endl;
                 }
-            }
+            } return;
         }
     }
     string full_cmd = _trim(string(getCommandLine()));

@@ -4,23 +4,23 @@ import os
 import socket
 import re
 import getpass
+import sys
 import pwd
 import random
-
 
 FUZZY_TOLERANCE_PERCENT = 10.0  # Allow ±10% difference
 
 OUTPUT_PATTERN = re.compile(r"(?P<prompt>.+?)>\s*(.*?)\s*\n(?P=prompt)>")
 
-def run_smash_command(command, timeout=5):
+def run_smash_command(command):
     proc = None
     try:
-        proc = subprocess.Popen(['./skeleton_smash'],
+        proc = subprocess.Popen([sys.argv[1]],
                                 stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE,
                                 text=True)
-        stdout, stderr = proc.communicate(f"{command}\n", timeout=timeout)
+        stdout, stderr = proc.communicate(f"{command}\nquit\n")
         prompt_match = re.match(r"(.+?)>", stdout)
         prompt = re.escape(prompt_match.group(1)) + ">"
         stdout = re.sub(rf"^{prompt}\s*$", "", stdout, flags=re.MULTILINE)
@@ -38,8 +38,8 @@ def get_system_watchproc(pid):
         cpu_total = 0
         for _ in range(5):  # Average over 5 seconds
             cpu_total += p.cpu_percent(interval=0.2)
-        cpu = cpu_total / 5  # Average CPU usage
-        mem = p.memory_info().rss / (1024 * 1024)  # in MB
+        cpu = cpu_total / 5
+        mem = p.memory_info().rss / (1024 * 1024)
         return f"PID: {pid} | CPU Usage: {cpu:.1f}% | Memory Usage: {mem:.1f} MB"
     except Exception as e:
         return f"Error getting process info: {e}"
@@ -47,11 +47,20 @@ def get_system_watchproc(pid):
 def get_system_du(folder):
     try:
         total = 0
-        for dirpath, dirnames, filenames in os.walk(folder):
+        for dirpath, dirnames, filenames in os.walk(folder, followlinks=False):
+            try:
+                st_dir = os.lstat(dirpath)
+                total += st_dir.st_blocks * 512
+            except FileNotFoundError:
+                continue
+
             for f in filenames:
                 fp = os.path.join(dirpath, f)
-                if os.path.isfile(fp):
-                    total += os.path.getsize(fp)
+                try:
+                    st = os.lstat(fp)
+                    total += st.st_blocks * 512
+                except (FileNotFoundError, PermissionError):
+                    continue
         total_kb = total // 1024
         return f"Total disk usage: {total_kb} KB"
     except Exception as e:
@@ -67,7 +76,6 @@ def get_system_whoami():
 
 def get_system_netinfo(interface):
     try:
-        # Get IP and mask
         addrs = psutil.net_if_addrs()
         if interface not in addrs:
             return f"Interface {interface} not found"
@@ -79,21 +87,17 @@ def get_system_netinfo(interface):
                 ip = addr.address
                 mask = addr.netmask
 
-        # Get default gateway using `ip route`
         try:
-            route_output = subprocess.check_output(['ip', 'route', 'show', 'default'],
-                                                   text=True)
+            route_output = subprocess.check_output(['ip', 'route', 'show', 'default'], text=True)
             default_gw = 'unknown'
             for line in route_output.splitlines():
-                if line.startswith('default') and interface in line:
+                if line.startswith('default') and 'via' in line:
                     parts = line.split()
-                    gw_index = parts.index('via') + 1
-                    default_gw = parts[gw_index]
+                    default_gw = parts[parts.index('via') + 1]
                     break
         except Exception as e:
             default_gw = f"error: {e}"
 
-        # Get DNS servers
         dns_servers = []
         try:
             with open('/etc/resolv.conf') as f:
@@ -104,7 +108,6 @@ def get_system_netinfo(interface):
             dns_servers.append(f"error: {e}")
 
         dns_str = ', '.join(dns_servers)
-
         return (f"IP Address: {ip}\nSubnet Mask: {mask}\n"
                 f"Default Gateway: {default_gw}\nDNS Servers: {dns_str}")
     except Exception as e:
@@ -139,18 +142,16 @@ def compare_outputs(smash_out, sys_out):
     sys_clean = sys_out.replace('\n', ' ').strip()
     return smash_clean == sys_clean or smash_out in sys_out or sys_out in smash_out
 
-
 def find_heavy_process():
     heavy_proc = None
     max_cpu = 0
 
     for proc in psutil.process_iter(attrs=['pid', 'name']):
         try:
-            proc.cpu_percent(interval=None)  # prime reading
+            proc.cpu_percent(interval=None)
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
 
-    # Wait a second and recheck CPU
     for proc in psutil.process_iter(attrs=['pid', 'name']):
         try:
             cpu = proc.cpu_percent(interval=0.2)
@@ -167,34 +168,55 @@ def find_heavy_process():
         print("No heavy process found.")
         return None
 
+def get_available_interface():
+    interfaces = psutil.net_if_addrs()
+    for iface in interfaces:
+        for addr in interfaces[iface]:
+            if addr.family == socket.AF_INET:
+                return iface
+    return None
+
 def main():
+    if len(sys.argv) < 2:
+        sys.argv.append('./skeleton_smash')
     current_pid = os.getpid()
     all_pids = psutil.pids()
     available_pids = [pid for pid in all_pids if pid != current_pid]
-    test_pid  = random.choice(available_pids)
+    test_pid = random.choice(available_pids)
     test_folder = '.'
-    test_interface = 'eth0'
+    test_interface = get_available_interface()
 
-    checks = [
-        (f"watchproc {test_pid}", get_system_watchproc(test_pid)),
-        (f"du {test_folder}", get_system_du(test_folder)),
-        ("whoami", get_system_whoami()),
-        (f"netinfo {test_interface}", get_system_netinfo(test_interface))
-    ]
+    if not test_interface:
+        print("No suitable network interface found for testing.")
+        return
+
+    try:
+        checks = [
+            (f"watchproc {test_pid}", get_system_watchproc(test_pid)),
+            (f"du {test_folder}", get_system_du(test_folder)),
+            ("whoami", get_system_whoami()),
+            (f"netinfo {test_interface}", get_system_netinfo(test_interface))
+        ]
+    except Exception as e:
+        print(f"Error while preparing checks: {e}")
+        return
 
     for cmd, expected in checks:
-        print(f"\n=== Checking: {cmd} ===")
-        smash_out, smash_err = run_smash_command(cmd)
-        if smash_err:
-            print(f"smash error: {smash_err}")
-            continue
-        print(f"smash says:\n{smash_out}")
-        print(f"system says:\n{expected}")
+        try:
+            print(f"\n=== Checking: {cmd} ===")
+            smash_out, smash_err = run_smash_command(cmd)
+            if smash_err:
+                print(f"smash error: {smash_err}")
+                continue
+            print(f"smash says:\n{smash_out}")
+            print(f"system says:\n{expected}")
 
-        if compare_outputs(smash_out, expected):
-            print("MATCH")
-        else:
-            print("MISMATCH")
+            if compare_outputs(smash_out, expected):
+                print("MATCH")
+            else:
+                print("MISMATCH")
+        except Exception as e:
+            print(f"Unexpected error during check '{cmd}': {e}")
 
 if __name__ == "__main__":
     main()

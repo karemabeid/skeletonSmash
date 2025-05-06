@@ -1,1 +1,0 @@
-CMakeLists.txt not found in C:\Users\karim\OneDrive\Desktop\semester 6\Operating Systems\OS HW\skeleton_smash Select CMakeLists.txt
