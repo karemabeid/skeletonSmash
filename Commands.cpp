@@ -120,6 +120,14 @@ bool readAll(const char *path, std::string &out) {
     return true;
 }
 
+struct linux_dirent64 {
+    ino64_t        d_ino;    /* 64-bit inode number */
+    off64_t        d_off;    /* 64-bit offset to next dirent */
+    unsigned short d_reclen; /* length of this record */
+    unsigned char  d_type;   /* file type (DT_REG, DT_DIR, etc.) */
+    char           d_name[]; /* filename (null-terminated) */
+};
+
 
 //end of our helper functions
 
