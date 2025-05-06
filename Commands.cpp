@@ -90,90 +90,9 @@ void freeArgs(char** args) {
     }
 }
 
-static string intToIP(uint32_t x) {
-    std::ostringstream oss;
-    oss << ((x >> 24) & 0xFF) << "."
-        << ((x >> 16) & 0xFF) << "."
-        << ((x >> 8 ) & 0xFF) << "."
-        << ( x        & 0xFF);
-    return oss.str();
-}
-
-static bool fetchInterface(const string &iface,string &outIP,string &outMask) {
-    int sock = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sock < 0) return false;
-
-    struct ifreq ifr;
-    memset(&ifr, 0, sizeof(ifr));
-    strncpy(ifr.ifr_name, iface.c_str(), IFNAMSIZ - 1);
-
-    // IP address
-    if (ioctl(sock, SIOCGIFADDR, &ifr) < 0) {
-        close(sock);
-        return false;
-    }
-    {
-        auto *sin = reinterpret_cast<struct sockaddr_in*>(&ifr.ifr_addr);
-        outIP = inet_ntoa(sin->sin_addr);
-    }
-
-    // Subnet mask
-    if (ioctl(sock, SIOCGIFNETMASK, &ifr) < 0) {
-        close(sock);
-        return false;
-    }
-    {
-        auto *sin = reinterpret_cast<struct sockaddr_in*>(&ifr.ifr_netmask);
-        outMask = inet_ntoa(sin->sin_addr);
-    }
-
-    close(sock);
-    return true;
-}
-
-static string fetchGateway(const string &iface) {
-    int fd = open("/proc/net/route", O_RDONLY);
-    if (fd < 0) return "N/A";
-
-    char buf[4096];
-    ssize_t n = read(fd, buf, sizeof(buf)-1);
-    close(fd);
-    if (n <= 0) return "N/A";
-    buf[n] = '\0';
-
-    for (char *line = strtok(buf, "\n"); line; line = strtok(nullptr, "\n")) {
-        char name[IFNAMSIZ], dest[9], gw[9];
-        if (sscanf(line, "%s %8s %8s", name, dest, gw) == 3) {
-            if (iface == name && strcmp(dest, "00000000") == 0) {
-                uint32_t g; sscanf(gw, "%x", &g);
-                return intToIP(g);
-            }
-        }
-    }
-    return "N/A";
-}
 
 
-static vector<string> fetchDNSServers() {
-    int fd = open("/etc/resolv.conf", O_RDONLY);
-    if (fd < 0) return {};
-    char buf[4096];
-    ssize_t n = read(fd, buf, sizeof(buf)-1);
-    close(fd);
-    if (n <= 0) return {};
-    buf[n] = '\0';
 
-    vector<string> out;
-    for (char *line = strtok(buf, "\n"); line; line = strtok(nullptr, "\n")) {
-        if (strncmp(line, "nameserver", 10) == 0) {
-            char ip[64];
-            if (sscanf(line, "nameserver %63s", ip) == 1) {
-                out.emplace_back(ip);
-            }
-        }
-    }
-    return out;
-}
 
 
 void writeErr(const char* msg) {
@@ -1052,7 +971,7 @@ static long getBlocks(const std::string &path) {
 void DiskUsageCommand::execute() {
 
     char *args[COMMAND_MAX_ARGS] = {nullptr};
-    int argc = _parseCommandLine(getCmdLine(), args);
+    int argc = _parseCommandLine(m_cmndLine, args);
 
     if (argc > 2) {
         writeErr("smash error: du: too many arguments\n");
