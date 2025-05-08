@@ -329,7 +329,7 @@ public:
 
     int addAlias(string aliasName , string value) {
 
-         if(m_og.find(getFirstWord(value))==m_og.end()) {
+         if(m_og.find(value)==m_og.end()) {
               cerr<<"smash error: alias: invalid alias format"<<std::endl;
               return 0;
           }
