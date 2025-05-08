@@ -19,7 +19,7 @@ def run_smash_command(command):
                                 stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE,
-                                text=True)
+                                universal_newlines=True)
         stdout, stderr = proc.communicate(f"{command}\nquit\n")
         prompt_match = re.match(r"(.+?)>", stdout)
         prompt = re.escape(prompt_match.group(1)) + ">"
@@ -88,7 +88,7 @@ def get_system_netinfo(interface):
                 mask = addr.netmask
 
         try:
-            route_output = subprocess.check_output(['ip', 'route', 'show', 'default'], text=True)
+            route_output = subprocess.check_output(['ip', 'route', 'show', 'default'], universal_newlines=True)
             default_gw = 'unknown'
             for line in route_output.splitlines():
                 if line.startswith('default') and 'via' in line:

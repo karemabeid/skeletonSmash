@@ -1,0 +1,7 @@
+smash> smash> Hello
+smash> smash> Hello_with_ampercent_should_do_the_same
+smash> smash> this_is_my_pid:
+smash> smash pid is 1
+smash> smash> this_is_my_pid:
+smash> smash pid is 1
+smash> smash: sending SIGKILL signal to 0 jobs:

@@ -1,0 +1,12 @@
+smash> smash0> smash1> smash> smash pid is 1
+smash> /tmp/smash_test
+smash> smash> /tmp
+smash> smash> /tmp/smash_test
+smash> smash> /tmp
+smash> smash> smash> smash> [1] sleep     10&
+[2] sleep 200&
+[3] sleep 300&
+smash> smash> smash> smash> smash: sending SIGKILL signal to 3 jobs:
+2: sleep     10&
+3: sleep 200&
+4: sleep 300&

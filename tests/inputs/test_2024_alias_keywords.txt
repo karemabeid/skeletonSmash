@@ -1,0 +1,9 @@
+alias ch1='chprompt'
+alias ch2='chprompt beeri'
+alias s='sleep    '
+alias s1='sleep 10&'
+alias ls='quit'
+alias >='alias'
+alias
+unalias >
+ls

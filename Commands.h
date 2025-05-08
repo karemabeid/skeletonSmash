@@ -40,6 +40,8 @@ using namespace std;
 #define COMMAND_MAX_LENGTH (200)
 #define COMMAND_MAX_ARGS (20)
 
+
+
 class Command {
     // TODO: Add your data members
 public:
@@ -314,7 +316,7 @@ public:
 public:
     Alias_system() {
         m_AlNum = 0;
-        m_og = { "cd", "quit", "showpid", "pwd", "alias", "unalias",
+        m_og = { "cd", "quit", "showpid", "pwd", "alias", "unalias","sleep" ,
                  ">>", "<<", ">", "<", "|", "listdir", "jobs", "fg", "getuser", "watch"
                  ,"|&","cd&", "jobs&" , "chprompt" , "chprompt&" , "showpid&" , "cat" , "ls", "pwd&", "fg&", "quit&",
                   "kill" , "kill&", "alias&", "unalias&", "watchproc" , "watchproc&" , "unsetenv" , 
@@ -503,3 +505,5 @@ public:
 };
 
 #endif //SMASH_COMMAND_H_
+
+

@@ -1,0 +1,19 @@
+chprompt smash0
+chprompt smash1
+chprompt
+showpid should_be_ignored
+pwd
+cd ../
+pwd
+cd -
+pwd
+cd -
+pwd
+sleep     10&
+sleep 200&
+sleep 300&
+jobs
+alias s1='sleep 1'
+s1
+unalias s1
+quit kill should_be_ignored

@@ -1,0 +1,21 @@
+smash> smash> smash> smash> smash> smash> smash> smash> smash> smash> smash> smash> smash> smash> signal number 9 was sent to pid 2
+smash> smash> smash> smash> signal number 90 was sent to pid 3
+smash> [1] sleep 7&
+smash> smash> [1] sleep 7&
+[2] sleep 5&
+smash> smash> [1] sleep 7&
+[2] sleep 5&
+[3] sleep 3&
+smash> smash> smash> smash> smash> [1] sleep 10 &
+smash> signal number 9 was sent to pid 4
+smash> smash> smash> smash> smash: got ctrl-C
+smash: process 5 was killed
+smash> [1] sleep 5&
+[2]           sleep        10   &
+smash> signal number 9 was sent to pid 6
+smash> [2]           sleep        10   &
+smash> signal number 9 was sent to pid 7
+smash> smash> smash> smash> smash: got ctrl-C
+smash: process 8 was killed
+smash> signal number 9 was sent to pid 9
+smash> smash: sending SIGKILL signal to 0 jobs:

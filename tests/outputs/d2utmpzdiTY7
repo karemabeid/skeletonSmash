@@ -1,0 +1,7 @@
+smash> submitted by Eran
+smash> smash> smash> smash> sleep 200& 30087
+smash: got ctrl-C
+smash: process 30087 was killed
+smash> [1] sleep 100&
+[3] sleep 300&
+smash> 

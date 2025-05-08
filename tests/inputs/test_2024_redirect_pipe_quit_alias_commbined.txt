@@ -1,0 +1,17 @@
+mkdir -p newdir
+echo HELLO > newdir/t.txt
+cat newdir/t.txt
+cd newdir
+alias lstf='ls > ls.txt'
+lstf
+cat ls.txt
+alias
+alias pipe='ls | grep t'    &
+alias q='quit kill'
+pipe
+unalias pipe lstf
+alias
+sleep 10&
+sleep 10&
+q > quit.txt
+quit

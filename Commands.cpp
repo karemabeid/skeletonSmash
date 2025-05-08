@@ -93,8 +93,7 @@ void freeArgs(char** args) {
 
 
 
-
-
+	
 void writeErr(const char* msg) {
     syscall(SYS_write, STDERR_FILENO, msg, strlen(msg));
 }
@@ -310,6 +309,7 @@ void QuitCommand::execute() {
 ////////////////////////// Kill Command //////////////////////////
 void KillCommand::execute(){
     SmallShell& shell = SmallShell::getInstance();
+    shell.getJobs()->removeFinishedJobs();
     char *args[COMMAND_MAX_ARGS];
     int i=0;
     while (i < COMMAND_MAX_ARGS){
@@ -342,9 +342,11 @@ void KillCommand::execute(){
     pid_t jPid = job->m_pid;
 
     if(kill(jPid, signum) == -1){
+		cout << "signal number " << signum << " was sent to pid " << jPid << endl;
         perror("smash error: kill failed");
         return;
     }else {
+		
         cout << "signal number " << signum << " was sent to pid " << jPid << endl;
     }
     freeArgs(args);
@@ -359,7 +361,7 @@ void JobsList::addJob(Command* cmd, pid_t pid ,bool isBackground) {
 }
 bool JobsList::jobIsTerminated(const shared_ptr<JobEntry> &job) {
     int jobStatus;
-    if(waitpid(job->m_jId, &jobStatus , WNOHANG) >= 1) {
+    if(waitpid(job->m_pid, &jobStatus , WNOHANG) >= 1) {
         return true;
     }
     return false;
@@ -367,12 +369,17 @@ bool JobsList::jobIsTerminated(const shared_ptr<JobEntry> &job) {
 
 void JobsList::removeFinishedJobs() {
     vector<shared_ptr<JobEntry>> newJobsList;
-    for(const auto& job : this->jobs){
-        if(!jobIsTerminated(job)) {
+    int counter = 0;
+    for(auto& job : this->jobs){
+		
+        if(!JobsList::jobIsTerminated(job) && job != nullptr) {
             newJobsList.push_back(job);
+            counter = job->m_jId;
         }
     }
+    
     this->jobs = newJobsList;
+    this->m_maxJId = counter;
 
 }
 
@@ -443,6 +450,7 @@ void AliasCommand::execute() {
         i++;
     }
      _parseCommandLine(getCommandLine(), args);
+     
 
     if(args[1] == nullptr){
         if(shell.getAliases()->getMap().empty()){
@@ -460,35 +468,39 @@ void AliasCommand::execute() {
     }
     string full_cmd = _trim(string(getCommandLine()));
     size_t cmd_start = full_cmd.find_first_not_of(WHITESPACE, 5); // 5 is the length of "alias"
+    
+    
+
 
     if(full_cmd.back()=='&') {
         full_cmd.pop_back();
     }
     full_cmd = full_cmd.substr(cmd_start);
     size_t eq_index = full_cmd.find('=');
+    
+    
+ 
 
     if (eq_index == string::npos || eq_index == 0 || eq_index == full_cmd.length() - 1) {
         cerr << "smash error: alias: invalid alias format" << endl;
         return;
     }
-
     string alias_name = _trim(full_cmd.substr(0, eq_index));
     string alias_command = _trim(full_cmd.substr(eq_index + 1));
+
+
     Alias_system* Alias = shell.getAliases();
-    if (Alias->m_og.count(alias_name) > 0 || Alias->getMap().count(alias_name) > 0) {
-        std::cout << "smash error: alias: " << alias_name
-                  << " already exists or is a reserved command" << std::endl;
-        return;
-    }
+
     if (!regex_match(alias_name, std::regex("^[a-zA-Z0-9_]+$"))) {
         cerr << "smash error: alias: invalid alias format" << endl;
         return;
     }
-
+ 
     if (alias_command.back() == '\'' && alias_command.front() == '\'') {
         alias_command = alias_command.substr(1, alias_command.length() - 2);
     }
     Alias->addAlias(alias_name,alias_command);
+    
 }
 ////////////////////////////////////////////////////////////
 //////////////////// UnAlias Command ///////////////////////
@@ -799,13 +811,13 @@ void RedirectionCommand::execute() {
         }
         int fd_id = -1;
         if (m_cmndLine[split + 1] == '>') {
-            fd_id = open(path, O_CREAT | O_WRONLY | O_APPEND, 0644);
+            fd_id = open(path, O_CREAT | O_WRONLY | O_APPEND, 0664);
             if (fd_id == -1) {
                 perror("smash error: open failed");
                 exit(0);
             }
         } else {
-            fd_id = open(path, O_CREAT | O_WRONLY | O_TRUNC, 0644);
+            fd_id = open(path, O_CREAT | O_WRONLY | O_TRUNC, 0664);
             if (fd_id == -1) {
                 perror("smash error: open failed");
                 exit(0);

@@ -1,0 +1,11 @@
+echo Hello > stam.txt
+cat stam.txt
+echo Hello_with_ampercent_should_do_the_same > stam.txt&
+cat stam.txt
+showpid > pid.txt
+echo this_is_my_pid:
+cat pid.txt
+showpid > pid2.txt&
+echo this_is_my_pid:
+cat pid2.txt
+quit kill

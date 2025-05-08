@@ -1,0 +1,28 @@
+alias ch1='chprompt'
+alias ch2='chprompt beeri'
+alias s='sleep'
+alias s1='sleep 10&'
+alias q='quit'
+alias qk='quit kill'
+alias as='alias'
+alias h='h'
+alias h='showpid'
+alias pwd='grep'
+alias
+unalias as
+unalias s1
+unalias q
+unalias as
+alias
+ch1 eyal
+ch2
+ch1
+s 10&
+s1
+jobs
+alias as='alias'&
+alias
+as b='b'
+alias
+s 100&
+qk
