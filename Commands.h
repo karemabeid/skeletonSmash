@@ -305,6 +305,10 @@ public:
 };
 
 //our added class//
+static std::string getFirstWord(const std::string &s) {
+    size_t pos = s.find_first_of(" \t\n");
+    return pos == std::string::npos ? s : s.substr(0, pos);
+}
 
 class Alias_system {
 public:
@@ -325,7 +329,7 @@ public:
 
     int addAlias(string aliasName , string value) {
 
-         if(m_og.find(value)==m_og.end()) {
+         if(m_og.find(getFirstWord(value))==m_og.end()) {
               cerr<<"smash error: alias: invalid alias format"<<std::endl;
               return 0;
           }
