@@ -90,7 +90,28 @@ void freeArgs(char** args) {
     }
 }
 
-
+// Read an entire file into a string
+static bool readAll(const char *path, std::string &dest) {
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) {
+        perror("open");
+        return false;
+    }
+    dest.clear();
+    std::array<char, 4096> buf;
+    while (true) {
+        ssize_t r = read(fd, buf.data(), buf.size());
+        if (r < 0) {
+            perror("read");
+            close(fd);
+            return false;
+        }
+        if (r == 0) break;
+        dest.append(buf.data(), r);
+    }
+    close(fd);
+    return true;
+}
 
 
 	
@@ -98,26 +119,7 @@ void writeErr(const char* msg) {
     syscall(SYS_write, STDERR_FILENO, msg, strlen(msg));
 }
 
-bool readAll(const char *path, std::string &out) {
-    int fd = syscall(SYS_open, path, O_RDONLY, 0);
-    if (fd < 0) {
-        writeErr("smash error: open failed\n");
-        return false;
-    }
-    out.clear();
-    char buf[4096];
-    ssize_t n;
-    while ((n = syscall(SYS_read, fd, buf, sizeof(buf))) > 0) {
-        out.append(buf, n);
-    }
-    if (n < 0) {
-        writeErr("smash error: read failed\n");
-        syscall(SYS_close, fd);
-        return false;
-    }
-    syscall(SYS_close, fd);
-    return true;
-}
+
 
 
 
@@ -1127,28 +1129,7 @@ static bool retrieveInterfaceInfo(const std::string &iface,
     return true;
 }
 
-// Read an entire file into a string
-static bool readAll(const char *path, std::string &dest) {
-    int fd = open(path, O_RDONLY);
-    if (fd < 0) {
-        perror("open");
-        return false;
-    }
-    dest.clear();
-    std::array<char, 4096> buf;
-    while (true) {
-        ssize_t r = read(fd, buf.data(), buf.size());
-        if (r < 0) {
-            perror("read");
-            close(fd);
-            return false;
-        }
-        if (r == 0) break;
-        dest.append(buf.data(), r);
-    }
-    close(fd);
-    return true;
-}
+
 
 // Parse /proc/net/route for the default gateway on iface
 static std::string fetchDefaultGateway(const std::string &iface) {
@@ -1203,7 +1184,7 @@ void NetInfo::execute() {
     // 1) Split the command line
     char *argv[COMMAND_MAX_ARGS] = {nullptr};
     for (int i = 0; i < COMMAND_MAX_ARGS; ++i) argv[i] = nullptr;
-    _parseCommandLine(m_cmndLine.c_str(), argv);
+    _parseCommandLine(m_cmndLine, argv);
 
     // 2) Must have an interface name
     if (!argv[1]) {
