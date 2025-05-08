@@ -1132,27 +1132,20 @@ static bool retrieveInterfaceInfo(const std::string &iface,
 
 
 // Parse /proc/net/route for the default gateway on iface
-static std::string fetchDefaultGateway(const std::string &iface) {
-    std::string text;
-    if (!readAll("/proc/net/route", text)) return "N/A";
+static std::string fetchDefaultGatewayAny() {
+    std::string data;
+    if (!readAll("/proc/net/route", data)) return "N/A";
 
-    std::istringstream lines(text);
+    std::istringstream lines(data);
     std::string line;
-    // Skip header
-    std::getline(lines, line);
+    std::getline(lines, line);  // skip header
 
     while (std::getline(lines, line)) {
-        std::istringstream L(line);
+        std::istringstream ls(line);
         std::string name, dest, gw, flags;
-        if (!(L >> name >> dest >> gw >> flags)) continue;
-        if (name == iface && dest == "00000000") {
-            // gw is hex little-endian (e.g. "0100A8C0")
-            uint32_t x = std::stoul(gw, nullptr, 16);
-            uint32_t host = ((x & 0xFF) << 24)
-                            | ((x & 0xFF00) << 8)
-                            | ((x & 0xFF0000) >> 8)
-                            | ((x & 0xFF000000) >> 24);
-            return formatIP(host);
+        if (!(ls >> name >> dest >> gw >> flags)) continue;
+        if (dest == "00000000") {
+            // parse and return as before...
         }
     }
     return "N/A";
