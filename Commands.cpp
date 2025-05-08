@@ -1083,7 +1083,6 @@ void WhoAmICommand::execute() {
 ///////////////////// NetInfo Command //////////////////////
 NetInfo::NetInfo(const char *cmd_line):Command(cmd_line){}
 
-}
 static void writeOut(const char *msg) {
     syscall(SYS_write, STDOUT_FILENO, msg, strlen(msg));
 }
@@ -1177,22 +1176,33 @@ static bool slurpFile(const char *path, std::string &out) {
     return true;
 }
 
-// Parse /proc/net/route for default gateway on this iface
-static std::string getDefaultGateway(const char *iface) {
+std::string getDefaultGateway(const std::string &iface) {
     std::string data;
-    if (!slurpFile("/proc/net/route", data)) return "";
-    char *saveptr, *line = strtok_r(&data[0], "\n", &saveptr);
-    while (line) {
-        char name[IFNAMSIZ], dst[16], gw[16];
-        if (sscanf(line, "%15s %15s %15s %*s", name, dst, gw) == 3) {
-            if (strcmp(name, iface)==0 && strcmp(dst, "00000000")==0) {
-                uint32_t g; sscanf(gw, "%x", &g);
-                uint32_t m = ntohl_manual(g);
-                return intToIP(m);
-            }
-        }
-        line = strtok_r(nullptr, "\n", &saveptr);
+    if (!slurpFile("/proc/net/route", data)) {
+        std::cerr << "smash error: cannot read /proc/net/route\n";
+        return "";
     }
+
+    std::istringstream all(data);
+    std::string line;
+
+    std::getline(all, line);
+
+    while (std::getline(all, line)) {
+        std::istringstream iss(line);
+        std::string name, dest, gateway, flags;
+        if (!(iss >> name >> dest >> gateway >> flags))
+            continue;
+
+
+        if (name == iface && dest == "00000000") {
+            uint32_t g = std::stoul(gateway, nullptr, 16);
+            uint32_t host = ntohl_manual(g);
+            return intToIP(host);
+        }
+    }
+
+
     return "";
 }
 
