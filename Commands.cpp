@@ -1100,7 +1100,7 @@ static std::string intToIP(uint32_t h) {
     return std::to_string((h >> 24) & 0xFF) + "." +
            std::to_string((h >> 16) & 0xFF) + "." +
            std::to_string((h >>  8) & 0xFF) + "." +
-           std::to_string((h      ) & 0xFF);
+           std::to_string((h) & 0xFF);
 }
 
 // Check that interface exists by fetching its flags
@@ -1177,42 +1177,54 @@ static bool slurpFile(const char *path, std::string &out) {
 }
 
 
-std::string getDefaultGateway(const std::string &iface) {
 
-    std::string data;
-    if (!slurpFile("/proc/net/route", data)) {
-        std::cerr << "smash error: cannot read /proc/net/route\n";
-        return "";
+std::string getDefaultGateway(const std::string &interface) {
+
+    int fd = open("/proc/net/route", O_RDONLY);
+    if (fd < 0) {
+        perror("open");
+        return "N/A";
     }
 
 
-    std::istringstream iss(data);
-    std::string line;
-
-
-    if (!std::getline(iss, line)) {
-        return "";
+    char buffer[4096];
+    ssize_t n = read(fd, buffer, sizeof(buffer) - 1);
+    close(fd);
+    if (n <= 0) {
+        perror("read");
+        return "N/A";
     }
+    buffer[n] = '\0';
 
 
-    while (std::getline(iss, line)) {
-        std::istringstream ls(line);
-        std::string name, dest, gateway, flags;
-        if (!(ls >> name >> dest >> gateway >> flags)) {
-            continue;
+    char *line = strtok(buffer, "\n");
+    while (line) {
+        char iface[IFNAMSIZ];
+        char dest[16], gw[16];
+        int flags;
+
+        if (sscanf(line, "%15s %15s %15s %x", iface, dest, gw, &flags) == 4) {
+
+            if (strcmp(iface, interface.c_str()) == 0 &&
+                strcmp(dest, "00000000") == 0)
+            {
+
+                uint32_t G;
+                sscanf(gw, "%x", &G);
+
+                uint32_t host = ((G & 0xFF) << 24)
+                                | ((G & 0xFF00) << 8)
+                                | ((G & 0xFF0000) >> 8)
+                                | ((G & 0xFF000000) >> 24);
+                return intToIP(host);
+            }
         }
-
-
-        if (name == iface && dest == "00000000") {
-
-            uint32_t g = std::stoul(gateway, nullptr, 16);
-            uint32_t host = ntohl_manual(g);
-            return intToIP(host);
-        }
+        line = strtok(nullptr, "\n");
     }
 
-    return "";
-}
+
+    return "N/A";
+
 
 // Parse /etc/resolv.conf for "nameserver" lines
 static std::vector<std::string> getDNSServers() {
