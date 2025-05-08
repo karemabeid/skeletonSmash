@@ -1082,78 +1082,173 @@ void WhoAmICommand::execute() {
 ////////////////////////////////////////////////////////////
 ///////////////////// NetInfo Command //////////////////////
 NetInfo::NetInfo(const char *cmd_line):Command(cmd_line){}
-std::string exec(const char* cmd) {
-    std::array<char, 128> buffer;
-    std::string result;
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd, "r"), pclose);
-    if (!pipe) {
-        throw std::runtime_error("popen() failed!");
-    }
-    while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
-        result += buffer.data();
-    }
-    result.erase(result.find_last_not_of(" \t\n\r") + 1);
-    return result;
-}
-std::string Get_Second_Word( const char *input){
 
-    std::istringstream stream(input);
-    std::string word;
-    int count = 0;
-    while (stream >> word) {
-        if(count == 1)return word;
-        ++count;
+}
+static void writeOut(const char *msg) {
+    syscall(SYS_write, STDOUT_FILENO, msg, strlen(msg));
+}
+
+// Manual ntohl
+static uint32_t ntohl_manual(uint32_t n) {
+    return ((n & 0xFF) << 24) |
+           ((n & 0xFF00) << 8) |
+           ((n & 0xFF0000) >> 8) |
+           ((n & 0xFF000000) >> 24);
+}
+
+// Format host‐order IPv4 as dotted string
+static std::string intToIP(uint32_t h) {
+    return std::to_string((h >> 24) & 0xFF) + "." +
+           std::to_string((h >> 16) & 0xFF) + "." +
+           std::to_string((h >>  8) & 0xFF) + "." +
+           std::to_string((h      ) & 0xFF);
+}
+
+// Check that interface exists by fetching its flags
+static bool interfaceExists(const char *iface) {
+    int sock = syscall(SYS_socket, AF_INET, SOCK_DGRAM, 0);
+    if (sock < 0) { writeErr("smash error: socket failed\n"); return false; }
+
+    struct ifreq ifr;
+    memset(&ifr, 0, sizeof(ifr));
+    strncpy(ifr.ifr_name, iface, IFNAMSIZ-1);
+
+    if (syscall(SYS_ioctl, sock, SIOCGIFFLAGS, &ifr) < 0) {
+        syscall(SYS_close, sock);
+        return false;
+    }
+    syscall(SYS_close, sock);
+    return true;
+}
+
+// Get IPv4 address as dotted string
+static std::string getIPAddress(const char *iface) {
+    int sock = syscall(SYS_socket, AF_INET, SOCK_DGRAM, 0);
+    if (sock < 0) { writeErr("smash error: socket failed\n"); return ""; }
+
+    struct ifreq ifr;
+    memset(&ifr, 0, sizeof(ifr));
+    strncpy(ifr.ifr_name, iface, IFNAMSIZ-1);
+
+    if (syscall(SYS_ioctl, sock, SIOCGIFADDR, &ifr) < 0) {
+        syscall(SYS_close, sock);
+        return "";
+    }
+    syscall(SYS_close, sock);
+
+    auto *sin = (struct sockaddr_in*)&ifr.ifr_addr;
+    uint32_t addr_h = ntohl_manual(sin->sin_addr.s_addr);
+    return intToIP(addr_h);
+}
+
+// Get subnet mask in dotted form
+static std::string getSubnetMask(const char *iface) {
+    int sock = syscall(SYS_socket, AF_INET, SOCK_DGRAM, 0);
+    if (sock < 0) { writeErr("smash error: socket failed\n"); return ""; }
+
+    struct ifreq ifr;
+    memset(&ifr, 0, sizeof(ifr));
+    strncpy(ifr.ifr_name, iface, IFNAMSIZ-1);
+
+    if (syscall(SYS_ioctl, sock, SIOCGIFNETMASK, &ifr) < 0) {
+        syscall(SYS_close, sock);
+        return "";
+    }
+    syscall(SYS_close, sock);
+
+    auto *sin = (struct sockaddr_in*)&ifr.ifr_netmask;
+    uint32_t mask_h = ntohl_manual(sin->sin_addr.s_addr);
+    return intToIP(mask_h);
+}
+
+// Read entire file via raw syscalls
+static bool slurpFile(const char *path, std::string &out) {
+    int fd = syscall(SYS_open, path, O_RDONLY, 0);
+    if (fd < 0) { writeErr("smash error: open failed\n"); return false; }
+    out.clear();
+    char buf[4096];
+    while (true) {
+        int n = syscall(SYS_read, fd, buf, sizeof(buf));
+        if (n < 0) { writeErr("smash error: read failed\n"); syscall(SYS_close, fd); return false; }
+        if (n == 0) break;
+        out.append(buf, n);
+    }
+    syscall(SYS_close, fd);
+    return true;
+}
+
+// Parse /proc/net/route for default gateway on this iface
+static std::string getDefaultGateway(const char *iface) {
+    std::string data;
+    if (!slurpFile("/proc/net/route", data)) return "";
+    char *saveptr, *line = strtok_r(&data[0], "\n", &saveptr);
+    while (line) {
+        char name[IFNAMSIZ], dst[16], gw[16];
+        if (sscanf(line, "%15s %15s %15s %*s", name, dst, gw) == 3) {
+            if (strcmp(name, iface)==0 && strcmp(dst, "00000000")==0) {
+                uint32_t g; sscanf(gw, "%x", &g);
+                uint32_t m = ntohl_manual(g);
+                return intToIP(m);
+            }
+        }
+        line = strtok_r(nullptr, "\n", &saveptr);
     }
     return "";
 }
-bool interfaceExists(const std::string& interface) {
-    std::string cmd = "ip link show " + interface + " 2>&1";
-    std::string output = exec(cmd.c_str());
-    return output.find("does not exist") == std::string::npos;
-}
 
-std::string getIPAddress(const std::string& interface) {
-    std::string cmd = "ip -4 addr show " + interface + " | grep -oP '(?<=inet\\s)\\d+(\\.\\d+){3}'";
-    return exec(cmd.c_str());
-}
-
-std::string getSubnetMask(const std::string& interface) {
-    std::string cmd = "ip -4 addr show " + interface + " | grep -oP '(?<=inet\\s)\\d+(\\.\\d+){3}/\\d+' | cut -d'/' -f2";
-    return exec(cmd.c_str());
-}
-
-std::string getDefaultGateway() {
-    std::string cmd = "ip route show default | grep -oP '(?<=via\\s)\\d+(\\.\\d+){3}'";
-    return exec(cmd.c_str());
-}
-
-std::string getDNSServers() {
-    std::string cmd = "grep -oP '(?<=nameserver\\s)\\d+(\\.\\d+){3}' /etc/resolv.conf | tr '\\n' ',' | sed 's/,$//'";
-    return exec(cmd.c_str());
+// Parse /etc/resolv.conf for "nameserver" lines
+static std::vector<std::string> getDNSServers() {
+    std::string data;
+    if (!slurpFile("/etc/resolv.conf", data)) return {};
+    std::vector<std::string> out;
+    char *saveptr, *line = strtok_r(&data[0], "\n", &saveptr);
+    while (line) {
+        if (strncmp(line, "nameserver", 10)==0) {
+            char ip[64];
+            if (sscanf(line, "nameserver %63s", ip)==1) {
+                out.emplace_back(ip);
+            }
+        }
+        line = strtok_r(nullptr, "\n", &saveptr);
+    }
+    return out;
 }
 
 void NetInfo::execute() {
-    std::string interface = Get_Second_Word(m_cmndLine);
+    // 1) parse args
+    char *args[COMMAND_MAX_ARGS] = {nullptr};
+    int argc = _parseCommandLine(getCmdLine(), args);
+    if (argc < 2) {
+        writeErr("smash error: netinfo: interface not specified\n");
+        freeArgs(args);
+        return;
+    }
+    const char *iface = args[1];
 
-    if (!interfaceExists(interface)) {
-        std::cerr << "smash error: netinfo: interface " << interface << " does not exist" << std::endl;
+    // 2) check existence
+    if (!interfaceExists(iface)) {
+        std::string e = std::string("smash error: netinfo: interface ")
+                        + iface + " does not exist\n";
+        writeErr(e.c_str());
+        freeArgs(args);
         return;
     }
 
-    if (interface.empty()) {
-        std::cerr << "smash error: netinfo: interface not specified" << std::endl;
-        return;
-    }
+    // 3) fetch details
+    std::string ip     = getIPAddress(iface);
+    std::string mask   = getSubnetMask(iface);
+    std::string gateway= getDefaultGateway(iface);
+    auto dnsList       = getDNSServers();
+    std::string dnsStr = dnsList.empty() ? "N/A"
+                                         : ([&]{ std::string s; for (auto &x: dnsList){ if(!s.empty()) s += ", "; s += x;} return s;} )();
 
-    std::string ipAddress = getIPAddress(interface);
-    std::string subnetMask = getSubnetMask(interface);
-    std::string defaultGateway = getDefaultGateway();
-    std::string dnsServers = getDNSServers();
+    // 4) print
+    writeOut(("IP Address: "      + ip      + "\n").c_str());
+    writeOut(("Subnet Mask: "     + mask    + "\n").c_str());
+    writeOut(("Default Gateway: " + gateway + "\n").c_str());
+    writeOut(("DNS Servers: "     + dnsStr  + "\n").c_str());
 
-    std::cout << "IP Address: " << ipAddress << std::endl;
-    std::cout << "Subnet Mask: " << subnetMask << std::endl;
-    std::cout << "Default Gateway: " << defaultGateway << std::endl;
-    std::cout << "DNS Servers: " << dnsServers << std::endl;
+    freeArgs(args);
 }
 
 
