@@ -1176,32 +1176,40 @@ static bool slurpFile(const char *path, std::string &out) {
     return true;
 }
 
+
 std::string getDefaultGateway(const std::string &iface) {
+
     std::string data;
     if (!slurpFile("/proc/net/route", data)) {
         std::cerr << "smash error: cannot read /proc/net/route\n";
         return "";
     }
 
-    std::istringstream all(data);
+
+    std::istringstream iss(data);
     std::string line;
 
-    std::getline(all, line);
 
-    while (std::getline(all, line)) {
-        std::istringstream iss(line);
+    if (!std::getline(iss, line)) {
+        return "";
+    }
+
+
+    while (std::getline(iss, line)) {
+        std::istringstream ls(line);
         std::string name, dest, gateway, flags;
-        if (!(iss >> name >> dest >> gateway >> flags))
+        if (!(ls >> name >> dest >> gateway >> flags)) {
             continue;
+        }
 
 
         if (name == iface && dest == "00000000") {
+
             uint32_t g = std::stoul(gateway, nullptr, 16);
             uint32_t host = ntohl_manual(g);
             return intToIP(host);
         }
     }
-
 
     return "";
 }
