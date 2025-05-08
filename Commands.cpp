@@ -1131,8 +1131,7 @@ static bool retrieveInterfaceInfo(const std::string &iface,
 
 
 
-// Parse /proc/net/route for the default gateway on iface
-static std::string fetchDefaultGatewayAny() {
+static std::string fetchDefaultGateway() {
     std::string data;
     if (!readAll("/proc/net/route", data)) return "N/A";
 
@@ -1144,8 +1143,17 @@ static std::string fetchDefaultGatewayAny() {
         std::istringstream ls(line);
         std::string name, dest, gw, flags;
         if (!(ls >> name >> dest >> gw >> flags)) continue;
+
+        // We don't filter on `name` here—just take the first default route
         if (dest == "00000000") {
-            // parse and return as before...
+            // gw is hex little-endian, e.g. "0100A8C0"
+            uint32_t G = std::stoul(gw, nullptr, 16);
+            uint32_t host =
+                    ((G & 0x000000FF) << 24) |
+                    ((G & 0x0000FF00) <<  8) |
+                    ((G & 0x00FF0000) >>  8) |
+                    ((G & 0xFF000000) >> 24);
+            return formatIP(host);
         }
     }
     return "N/A";
@@ -1195,7 +1203,7 @@ void NetInfo::execute() {
     }
 
     // 4) Default gateway
-    std::string gw = fetchDefaultGateway(iface);
+    std::string gw = fetchDefaultGateway();
 
     // 5) DNS servers
     auto dns = parseDNSServers();
