@@ -1243,7 +1243,7 @@ m_aliasSystem(new Alias_system()), m_curr_cmndLine(""), m_prompt("smash"){
 /**
 * Creates and returns a pointer to Command class which matches the given command line (cmd_line)
 */
-CoCommand *SmallShell::CreateCommand(const char *cmd_line) {
+Command *SmallShell::CreateCommand(const char *cmd_line) {
     SmallShell& shell = SmallShell::getInstance();
     string checkIfEmpty = (string) cmd_line;
     if (checkIfEmpty.empty()) {
@@ -1264,6 +1264,8 @@ CoCommand *SmallShell::CreateCommand(const char *cmd_line) {
     for(const auto& alias : map){
         if(firstWord == alias.first){
             cmd = alias.second;
+            cmd_line = cmd.c_str();
+            numOfWords = _parseCommandLine(cmd_line, splitInput);
         }
     }
     if (numOfWords > 1) {
@@ -1283,7 +1285,7 @@ CoCommand *SmallShell::CreateCommand(const char *cmd_line) {
         return new PipeCommand(cmd_line);
     } else if (((string) cmd_line).find(">") != string::npos) {
         return new RedirectionCommand(cmd_line);
-    } else if (cmd.compare("chprompt") == 0) {
+    } else if (getFirstWord(cmd) == ("chprompt")) {
         if (numOfWords == 1) {
             getInstance().setPrompt("smash");
             return nullptr;
