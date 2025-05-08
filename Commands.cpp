@@ -1243,121 +1243,91 @@ m_aliasSystem(new Alias_system()), m_curr_cmndLine(""), m_prompt("smash"){
 /**
 * Creates and returns a pointer to Command class which matches the given command line (cmd_line)
 */
-// Returns everything after the first word (trimmed of leading whitespace)
-static std::string getRest(const std::string &s) {
-    size_t pos = s.find_first_of(" \t\n");
-    if (pos == std::string::npos) return "";
-    size_t start = s.find_first_not_of(" \t\n", pos);
-    return start == std::string::npos ? "" : s.substr(start);
-}
-
-// Your CreateCommand, with alias expansion on first word only:
-Command *SmallShell::CreateCommand(const char *cmd_line) {
+CoCommand *SmallShell::CreateCommand(const char *cmd_line) {
     SmallShell& shell = SmallShell::getInstance();
-
-    // 1) Quick empty check
-    std::string raw = cmd_line;
-    if (_trim(raw).empty()) {
+    string checkIfEmpty = (string) cmd_line;
+    if (checkIfEmpty.empty()) {
         return nullptr;
     }
-
-    // 2) Single‐trimmed string for easy manipulation
-    std::string cmd_s = _trim(raw);
-
-    // 3) Extract firstWord + rest
-    std::string firstWord = getFirstWord(cmd_s);
-    std::string rest      = getRest(cmd_s);
-
-    // 4) Alias lookup on firstWord only (but not for the alias/unalias built‐ins)
+    char **splitInput = new char *[20];
+    int numOfWords;
+    numOfWords = _parseCommandLine(cmd_line, splitInput);
+    string cmd = _trim(splitInput[0]);
+    string prompt;
     Alias_system* Alias = shell.getAliases();
-    const auto& amap = Alias->getMap();
-    auto it = amap.find(firstWord);
-    if (it != amap.end() &&
-        firstWord != "alias" &&
-        firstWord != "unalias")
-    {
-        // rebuild the line as: <expansion> + " " + <rest>
-        if (rest.empty()) {
-            cmd_s = it->second;
-        } else {
-            cmd_s = it->second + " " + rest;
+    const auto& map = Alias->getMap();
+    string cmd_s = _trim(string(cmd_line));
+    string firstWord = cmd_s.substr(0, cmd_s.find_first_of(" \n"));
+    if(cmd_s.empty()){
+        return nullptr;
+    }
+    for(const auto& alias : map){
+        if(firstWord == alias.first){
+            cmd = alias.second;
         }
     }
-
-    // 5) Now tokenize cmd_s exactly as before
-    char **splitInput = new char*[COMMAND_MAX_ARGS];
-    for (int i = 0; i < COMMAND_MAX_ARGS; ++i) {
-        splitInput[i] = nullptr;
-    }
-    int numOfWords = _parseCommandLine(cmd_s.c_str(), splitInput);
-
-    std::string cmd = _trim(splitInput[0] ? splitInput[0] : "");
-    std::string prompt;
     if (numOfWords > 1) {
-        prompt = splitInput[1];
+        prompt = (string) splitInput[1];
     }
     delete[] splitInput;
-
-    // 6) Dispatch to the correct Command subclass
-    if (cmd == "whoami") {
-        return new WhoAmICommand(cmd_s.c_str());
+    if(cmd.compare("whoami") == 0 ) {
+        return new WhoAmICommand(cmd_line);
     }
-    if (cmd == "netinfo") {
-        return new NetInfo(cmd_s.c_str());
+    if(cmd.compare("netinfo") == 0 ) {
+        return new NetInfo(cmd_line);
     }
-    if (cmd == "du") {
-        return new DiskUsageCommand(cmd_s.c_str());
+    if(cmd.compare("du") == 0 ) {
+        return new DiskUsageCommand(cmd_line);
     }
-    if (cmd_s.find("|") != std::string::npos) {
-        return new PipeCommand(cmd_s.c_str());
-    }
-    else if (cmd_s.find(">") != std::string::npos) {
-        return new RedirectionCommand(cmd_s.c_str());
-    }
-    else if (cmd == "chprompt") {
-        if (prompt.empty()) {
-            shell.setPrompt("smash");
-        } else {
-            shell.setPrompt(prompt);
+    if (((string) cmd_line).find("|") != string::npos) {
+        return new PipeCommand(cmd_line);
+    } else if (((string) cmd_line).find(">") != string::npos) {
+        return new RedirectionCommand(cmd_line);
+    } else if (cmd.compare("chprompt") == 0) {
+        if (numOfWords == 1) {
+            getInstance().setPrompt("smash");
+            return nullptr;
         }
+        setPrompt(prompt);
         return nullptr;
+    } else if (cmd.compare("showpid") == 0 || cmd.compare("showpid&") == 0) {
+        return new ShowPidCommand(cmd_line);
+
+    }else if (cmd.compare("pwd") == 0 || cmd.compare("pwd&") == 0) {
+        return new GetCurrDirCommand(cmd_line);
+
+    } else if (cmd.compare("cd") == 0 || cmd.compare("cd&") == 0) {
+        return new ChangeDirCommand(cmd_line);
+
+    } else if (cmd.compare("jobs") == 0 || cmd.compare("jobs&") == 0) {
+        return new JobsCommand(cmd_line, shell.getJobs());
+
+    } else if (cmd.compare("fg") == 0 || cmd.compare("fg&") == 0) {
+        return new ForegroundCommand(cmd_line, shell.getJobs());
+
+    }else if (cmd.compare("quit") == 0 || cmd.compare("quit&") == 0) {
+        return new QuitCommand(cmd_line, shell.getJobs());
+
+    }else if (cmd.compare("kill") == 0 || cmd.compare("kill&") == 0) {
+        return new KillCommand(cmd_line, shell.getJobs());
     }
-    else if (cmd == "showpid" || cmd == "showpid&") {
-        return new ShowPidCommand(cmd_s.c_str());
-    }
-    else if (cmd == "pwd" || cmd == "pwd&") {
-        return new GetCurrDirCommand(cmd_s.c_str());
-    }
-    else if (cmd == "cd" || cmd == "cd&") {
-        return new ChangeDirCommand(cmd_s.c_str());
-    }
-    else if (cmd == "jobs" || cmd == "jobs&") {
-        return new JobsCommand(cmd_s.c_str(), shell.getJobs());
-    }
-    else if (cmd == "fg" || cmd == "fg&") {
-        return new ForegroundCommand(cmd_s.c_str(), shell.getJobs());
-    }
-    else if (cmd == "quit" || cmd == "quit&") {
-        return new QuitCommand(cmd_s.c_str(), shell.getJobs());
-    }
-    else if (cmd == "kill" || cmd == "kill&") {
-        return new KillCommand(cmd_s.c_str(), shell.getJobs());
-    }
-    else if (cmd == "alias" || cmd == "alias&") {
-        return new AliasCommand(cmd_s.c_str());
-    }
-    else if (cmd == "unalias" || cmd == "unalias&") {
-        return new UnAliasCommand(cmd_s.c_str());
-    }
-    else if (cmd == "unsetenv" || cmd == "unsetenv&") {
-        return new UnSetEnvCommand(cmd_s.c_str());
-    }
-    else if (cmd == "watchproc" || cmd == "watchproc&") {
-        return new WatchProcCommand(cmd_s.c_str());
+    else if (cmd.compare("alias") == 0 || cmd.compare("alias&") == 0) {
+        return new AliasCommand(cmd_line);
+
+    }else if (cmd.compare("unalias") == 0 || cmd.compare("unalias&") == 0) {
+        return new UnAliasCommand(cmd_line);
+
+    }else if (cmd.compare("unsetenv") == 0 || cmd.compare("unsetenv&") == 0) {
+        return new UnSetEnvCommand(cmd_line);
+
+    }else if (cmd.compare("watchproc") == 0 || cmd.compare("watchproc&") == 0) {
+        return new WatchProcCommand(cmd_line);
+
     }
     else {
-        return new ExternalCommand(cmd_s.c_str());
+        return new ExternalCommand(cmd_line);
     }
+    return nullptr;
 }
 
 void SmallShell::executeCommand(const char *cmd_line) {
